@@ -12,6 +12,9 @@
 #
 # Settings (environment variables, all optional):
 #   DOMAIN        public hostname pointing at this machine. Default: <public-ip>.sslip.io
+#   HTTPS_PORT    public HTTPS port Caddy listens on. Default: 443. With another port
+#                 (e.g. 28443), port 80 must still reach this machine: Let's Encrypt
+#                 verifies the domain over port 80 when issuing and renewing (~every 60 days).
 #   DATABASE_URL  external Postgres. Default: local Postgres, created here
 #   TUTOR_TZ      time zone for "due today". Default: Europe/Warsaw
 #   MCP_TOKEN     secret token. Default: generated on first install, kept on updates
@@ -25,7 +28,6 @@ APP_DIR=/opt/italian-tutor
 ENV_FILE=/etc/italian-tutor.env
 SERVICE=italian-tutor
 APP_USER=tutor
-PORT=8080
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 log() { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
@@ -43,8 +45,13 @@ if [[ -f $ENV_FILE ]]; then
   DATABASE_URL=${DATABASE_URL:-$(prev DATABASE_URL)}
   TUTOR_TZ=${TUTOR_TZ:-$(prev TUTOR_TZ)}
   DOMAIN=${DOMAIN:-$(prev DOMAIN)}
+  HTTPS_PORT=${HTTPS_PORT:-$(prev HTTPS_PORT)}
 fi
 TUTOR_TZ=${TUTOR_TZ:-Europe/Warsaw}
+HTTPS_PORT=${HTTPS_PORT:-443}
+[[ $HTTPS_PORT =~ ^[0-9]+$ && $HTTPS_PORT -ge 1 && $HTTPS_PORT -le 65535 ]] || die "HTTPS_PORT must be a port number"
+[[ $HTTPS_PORT != 80 ]] || die "HTTPS_PORT cannot be 80: Caddy needs port 80 for the certificate check"
+PORT=8080  # internal app port, loopback only
 
 log "Installing base packages"
 export DEBIAN_FRONTEND=noninteractive
@@ -92,6 +99,7 @@ TUTOR_TZ=$TUTOR_TZ
 HOST=127.0.0.1
 PORT=$PORT
 DOMAIN=${DOMAIN:-}
+HTTPS_PORT=$HTTPS_PORT
 EOF
 chmod 600 "$ENV_FILE"
 umask 022
@@ -148,35 +156,36 @@ if [[ -z ${NO_CADDY:-} ]]; then
     apt-get update -qq
     apt-get install -y -qq caddy >/dev/null
   fi
-  log "Configuring Caddy for https://$DOMAIN"
+  if [[ $HTTPS_PORT == 443 ]]; then PUBLIC="$DOMAIN"; else PUBLIC="$DOMAIN:$HTTPS_PORT"; fi
+  log "Configuring Caddy for https://$PUBLIC"
   # No access log: the connector URL carries the token.
   cat >/etc/caddy/Caddyfile <<EOF
-$DOMAIN {
+$PUBLIC {
 	encode gzip
 	reverse_proxy 127.0.0.1:$PORT
 }
 EOF
   if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
     ufw allow 80/tcp >/dev/null
-    ufw allow 443/tcp >/dev/null
+    ufw allow "$HTTPS_PORT/tcp" >/dev/null
   fi
   systemctl enable caddy >/dev/null
   systemctl reload-or-restart caddy
 
   printf 'Waiting for the HTTPS certificate'
   for _ in $(seq 1 30); do
-    curl -fsS "https://$DOMAIN/health" >/dev/null 2>&1 && break
+    curl -fsS "https://$PUBLIC/health" >/dev/null 2>&1 && break
     printf '.'
     sleep 2
   done
   echo
-  if curl -fsS "https://$DOMAIN/health" >/dev/null 2>&1; then
-    echo "https://$DOMAIN/health is up"
+  if curl -fsS "https://$PUBLIC/health" >/dev/null 2>&1; then
+    echo "https://$PUBLIC/health is up"
   else
-    echo "HTTPS is not answering yet. Check that $DOMAIN points at this machine and ports 80/443 are open"
+    echo "HTTPS is not answering yet. Check that $DOMAIN points at this machine and ports 80 and $HTTPS_PORT are open"
     echo "(cloud firewall / security group too), then: journalctl -u caddy -n 50"
   fi
-  URL="https://$DOMAIN"
+  URL="https://$PUBLIC"
 else
   URL="https://<your-proxy-host>"
 fi

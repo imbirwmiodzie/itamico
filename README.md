@@ -103,6 +103,8 @@ git clone -b claude/jolly-keller-yzmyth <repo-url> && cd itamico
 sudo DOMAIN=tutor.example.com ./deploy/install.sh   # omit DOMAIN to use <ip>.sslip.io
 ```
 
+For a public HTTPS port other than 443, add `HTTPS_PORT=28443`. Port 80 must still reach the machine, because Let's Encrypt checks the domain over port 80 when it issues and renews the certificate.
+
 It prints the connector URL at the end. Re-run it after `git pull` to update; the token and data are kept.
 
 **Railway / Render / any Docker host:** build the included `Dockerfile` and set the same environment variables. The server listens on `PORT` (default 8080).
