@@ -4,6 +4,8 @@
 # Run on your own computer, from the repository:
 #   ./deploy/deploy.sh                    # uses deploy/deploy.env
 #   ./deploy/deploy.sh user@host          # or name the server directly
+#   ./deploy/deploy.sh -i ~/key.pem ubuntu@1.2.3.4   # with a key file, like ssh -i
+#   ./deploy/deploy.sh -p 2222 user@host  # SSH port, like ssh -p
 #   ./deploy/deploy.sh --upload-only      # copy files, don't run the installer
 #
 # Settings come from deploy/deploy.env (copy deploy/deploy.env.example; it is
@@ -28,20 +30,36 @@ die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 log() { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
 
 UPLOAD_ONLY=
-for arg in "$@"; do
-  case $arg in
+SSH_TARGET_ARG='' SSH_KEY_ARG='' SSH_PORT_ARG=''
+while (( $# > 0 )); do
+  case $1 in
     --upload-only) UPLOAD_ONLY=1 ;;
-    -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    -*) die "unknown option $arg" ;;
-    *) SSH_TARGET_ARG=$arg ;;
+    -i|--key) [[ $# -ge 2 ]] || die "$1 needs a key file"; SSH_KEY_ARG=$2; shift ;;
+    -p|--port) [[ $# -ge 2 ]] || die "$1 needs a port"; SSH_PORT_ARG=$2; shift ;;
+    -h|--help) sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -*) die "unknown option $1" ;;
+    *) SSH_TARGET_ARG=$1 ;;
   esac
+  shift
 done
 
 # shellcheck disable=SC1091
 [[ -f deploy/deploy.env ]] && { set -a; . deploy/deploy.env; set +a; }
+# Command-line flags win over deploy.env.
 SSH_TARGET=${SSH_TARGET_ARG:-${SSH_TARGET:-}}
+SSH_KEY=${SSH_KEY_ARG:-${SSH_KEY:-}}
+SSH_PORT=${SSH_PORT_ARG:-${SSH_PORT:-22}}
 [[ -n $SSH_TARGET ]] || die "no server: pass user@host or set SSH_TARGET in deploy/deploy.env"
-SSH_PORT=${SSH_PORT:-22}
+if [[ -n $SSH_KEY ]]; then
+  # A quoted "~/..." from deploy.env arrives unexpanded.
+  [[ $SSH_KEY == \~/* ]] && SSH_KEY="$HOME/${SSH_KEY#\~/}"
+  [[ -f $SSH_KEY ]] || die "key file not found: $SSH_KEY"
+  # ssh refuses a private key others can read (common for files in Downloads).
+  if [[ -n $(find "$SSH_KEY" -perm -004 -o -perm -040 2>/dev/null) ]]; then
+    echo "Tightening permissions on $SSH_KEY (ssh rejects keys readable by others)"
+    chmod 600 "$SSH_KEY"
+  fi
+fi
 REMOTE_DIR=${REMOTE_DIR:-itamico}
 REMOTE_DIR=${REMOTE_DIR#\~/}  # relative paths are relative to the login's home anyway
 
@@ -51,7 +69,7 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "run from a git check
 # One shared connection, so a password (if you use one) is asked for only once.
 CTL="${TMPDIR:-/tmp}/itamico-ssh-$$"
 SSH=(ssh -p "$SSH_PORT" -o ServerAliveInterval=15 -o ControlMaster=auto -o "ControlPath=$CTL" -o ControlPersist=120)
-[[ -n ${SSH_KEY:-} ]] && SSH+=(-i "$SSH_KEY")
+[[ -n $SSH_KEY ]] && SSH+=(-i "$SSH_KEY" -o IdentitiesOnly=yes)
 LIST=$(mktemp)
 cleanup() { rm -f "$LIST"; "${SSH[@]}" -O exit "$SSH_TARGET" 2>/dev/null || true; }
 trap cleanup EXIT

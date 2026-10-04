@@ -113,7 +113,12 @@ It prints the connector URL at the end. Re-run it after `git pull` to update; th
 cp deploy/deploy.env.example deploy/deploy.env   # set SSH_TARGET, DOMAIN, HTTPS_PORT…; git-ignored
 ./deploy/deploy.sh                                # upload this checkout and run the installer
 ./deploy/deploy.sh --upload-only                  # just copy the files
+./deploy/deploy.sh -i ~/Downloads/server.key ubuntu@203.0.113.7   # key and server on the command line, like ssh
 ```
+
+`-i KEY` and `-p PORT` work as they do for `ssh`, and override `deploy/deploy.env`. A key file that others can read (typical for one in Downloads) is set to `chmod 600` first, because ssh refuses it otherwise.
+
+**Oracle Cloud:** the installer opens ports 80 and `HTTPS_PORT` in the instance's iptables rules, which by default block everything except SSH. You still have to add ingress rules for both ports to the subnet's **Security List** (or the instance's NSG) in the Oracle console.
 
 The script sends every file git tracks, plus new files that aren't ignored, including uncommitted edits. It never sends `.env` or `deploy.env`. On the server it unpacks into `~/itamico` and swaps the new copy into place, then runs `deploy/install.sh` with `sudo`, passing your settings through. It uses one SSH connection, so a password is asked for at most once. It works from Linux, macOS or WSL.
 
