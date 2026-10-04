@@ -8,7 +8,7 @@ import { z } from "zod";
 import { Store, TutorError, WORD_MODE_MAX_WORDS } from "./store.js";
 
 const INSTRUCTIONS = `Italian voice tutor backend. The user is riding a bicycle or driving and only talks.
-Call start_session first. Call capture_item silently whenever the user asks what an Italian word means or how to say something, falls back to English or Polish, or needs the correct form supplied. Drill due items (get_due_items) before free conversation and grade each answer with record_attempt. Never reuse prompt sentences; invent new ones each time. Every response includes minutes_left for a timed session; when time_up is true, finish the current item and call end_session.`;
+Call start_session first (together with get_due_items). Speak first, save after: in a turn that calls capture_item or record_attempt, say your reply first and put the tool calls at the end of the turn, then say nothing more. Call capture_item silently whenever the user asks what an Italian word means or how to say something, falls back to English or Polish, or needs the correct form supplied. Drill due items (get_due_items) before free conversation and grade each answer with record_attempt. Never reuse prompt sentences; invent new ones each time. Every response includes minutes_left for a timed session; when time_up is true, finish the current item and call end_session.`;
 
 const GRADE_TABLE = `SM-2 quality: 5 = correct, fluent, no fillers; 4 = correct with 1-2 fillers or a self-correction; 3 = correct with 3+ fillers; 2 = correct only after a hint; 1 = wrong word or form; 0 = English/Polish fallback or no answer.`;
 
@@ -56,7 +56,7 @@ export function buildServer(store: Store): McpServer {
     {
       title: "Capture gap",
       description:
-        "Silently store a gap the user could not produce. Call when (1) the user asks what an Italian word means or how to say something in Italian [source 'asked'], (2) the user falls back to English or Polish mid-sentence [source 'fallback'], (3) you had to supply the correct form of a word, grammar or usage [source 'error'], or (4) the user failed to produce a word taught during topic vocabulary [source 'topic_check']. Store the correct Italian form only (a word, short phrase or corrected form like 'mi piacciono' or 'su una pista ciclabile'), never the user's mistake. An existing item is not duplicated; re-capturing it makes it due again today. Do not announce the capture beyond a word or two.",
+        "Silently store a gap the user could not produce. Call when (1) the user asks what an Italian word means or how to say something in Italian [source 'asked'], (2) the user falls back to English or Polish mid-sentence [source 'fallback'], (3) you had to supply the correct form of a word, grammar or usage [source 'error'], or (4) the user failed to produce a word taught during topic vocabulary [source 'topic_check']. Store the correct Italian form only (a word, short phrase or corrected form like 'mi piacciono' or 'su una pista ciclabile'), never the user's mistake. An existing item is not duplicated; re-capturing it makes it due again today. Do not announce the capture beyond a word or two. Speed: say your reply first and call this at the end of your turn.",
       inputSchema: {
         italian: z.string().min(1).max(200).describe("Correct Italian word, phrase or corrected form"),
         english: z.string().min(1).max(200).describe("Short English gloss"),
@@ -86,7 +86,7 @@ export function buildServer(store: Store): McpServer {
     "record_attempt",
     {
       title: "Record attempt",
-      description: `Grade one drill answer; the server applies SM-2 scheduling. Call once per item per drill, with the grade of the FIRST answer: a word right only after a hint is 2 even if the final repeat was clean. ${GRADE_TABLE} fillers = number of filler sounds (eh, ehm, uh...) in the answer; the server caps the grade at 4 for 1-2 fillers and 3 for 3+. Returns the new interval_days and due_on.`,
+      description: `Grade one drill answer; the server applies SM-2 scheduling. Call once per item per drill, with the grade of the FIRST answer: a word right only after a hint is 2 even if the final repeat was clean. ${GRADE_TABLE} fillers = number of filler sounds (eh, ehm, uh...) in the answer; the server caps the grade at 4 for 1-2 fillers and 3 for 3+. Returns the new interval_days and due_on. Speed: say your reaction and the next prompt first, then call this at the end of your turn; don't wait for the result to speak.`,
       inputSchema: {
         item_id: z.number().int(),
         session_id: z.number().int().optional().describe("From start_session; defaults to the open session"),
