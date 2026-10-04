@@ -96,6 +96,15 @@ fly secrets set DATABASE_URL='postgres://…' MCP_TOKEN="$(openssl rand -hex 24)
 fly deploy
 ```
 
+**Your own Debian/Ubuntu server** (Node, systemd, Caddy with automatic HTTPS, local Postgres unless you pass `DATABASE_URL`):
+
+```sh
+git clone -b claude/jolly-keller-yzmyth <repo-url> && cd itamico
+sudo DOMAIN=tutor.example.com ./deploy/install.sh   # omit DOMAIN to use <ip>.sslip.io
+```
+
+It prints the connector URL at the end. Re-run it after `git pull` to update; the token and data are kept.
+
 **Railway / Render / any Docker host:** build the included `Dockerfile` and set the same environment variables. The server listens on `PORT` (default 8080).
 
 Keep the server in the **same region as the database**: each tool call makes a few database round trips. Also avoid scale-to-zero, because a cold start mid-ride is a long silence. Neon's free tier suspends the database after a few idle minutes, and the first query after that takes about half a second.

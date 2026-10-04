@@ -8,8 +8,8 @@ const db = createPool(config.databaseUrl);
 await migrate(db);
 
 const app = createApp(new Store(db, config.timeZone), config.token);
-const server = app.listen(config.port, () => {
-  console.log(`italian-tutor MCP server on :${config.port} (POST /mcp), tz ${config.timeZone}`);
+const server = app.listen(config.port, config.host, () => {
+  console.log(`italian-tutor MCP server on ${config.host}:${config.port} (POST /mcp), tz ${config.timeZone}`);
 });
 
 const shutdown = () => {
