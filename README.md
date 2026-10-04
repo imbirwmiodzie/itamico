@@ -107,6 +107,16 @@ For a public HTTPS port other than 443, add `HTTPS_PORT=28443`. Port 80 must sti
 
 It prints the connector URL at the end. Re-run it after `git pull` to update; the token and data are kept.
 
+**Push from your computer over SSH** (no GitHub access needed on the server):
+
+```sh
+cp deploy/deploy.env.example deploy/deploy.env   # set SSH_TARGET, DOMAIN, HTTPS_PORT…; git-ignored
+./deploy/deploy.sh                                # upload this checkout and run the installer
+./deploy/deploy.sh --upload-only                  # just copy the files
+```
+
+The script sends every file git tracks, plus new files that aren't ignored, including uncommitted edits. It never sends `.env` or `deploy.env`. On the server it unpacks into `~/itamico` and swaps the new copy into place, then runs `deploy/install.sh` with `sudo`, passing your settings through. It uses one SSH connection, so a password is asked for at most once. It works from Linux, macOS or WSL.
+
 **Railway / Render / any Docker host:** build the included `Dockerfile` and set the same environment variables. The server listens on `PORT` (default 8080).
 
 Keep the server in the **same region as the database**: each tool call makes a few database round trips. Also avoid scale-to-zero, because a cold start mid-ride is a long silence. Neon's free tier suspends the database after a few idle minutes, and the first query after that takes about half a second.
