@@ -217,6 +217,63 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   });
 
+  test("words page: full-text search", async () => {
+    await call("capture_item", { italian: "perché", english: "why, because", context: "non so perché", source: "asked" });
+    await call("capture_item", { italian: "il portellone", english: "the tailgate", note: "masculine", context: "ho aperto il tailgate", source: "fallback" });
+    const store = new Store(db, TZ);
+    const names = async (q: string, filter: "all" | "due" | "nocontext" | "failed" = "all") =>
+      (await store.searchItems(q, filter)).items.map((i: { italian: string }) => i.italian);
+
+    assert.deepEqual(await names("perche"), ["perché"], "accents folded");
+    assert.deepEqual(await names("pell"), ["la pellicola"], "word prefix");
+    assert.deepEqual(await names("tailgate"), ["il portellone"], "english and context");
+    assert.deepEqual(await names("masculine aperto"), ["il portellone"], "all words required, across fields");
+    assert.deepEqual(await names("ellicol"), ["la pellicola"], "mid-word substring");
+    assert.deepEqual(await names("a:b & | ! ( ) ' 100%"), [], "query syntax and LIKE wildcards are inert");
+    assert.ok((await names("")).length >= 5, "empty query lists everything");
+    assert.ok(!(await names("", "nocontext")).includes("perché"));
+    const hit = (await store.searchItems("tragitto")).items[0];
+    assert.equal(hit.italian, "tragitto");
+    assert.ok(hit.history.length >= 1 && "grade" in hit.history[0], "answer history included");
+
+    const page = await (await fetch(`${base}/items/${TOKEN}?q=perche`)).text();
+    assert.match(page, /perché/);
+    assert.match(page, /1 match/);
+    assert.equal((await fetch(`${base}/items/wrong-token?q=x`)).status, 404);
+  });
+
+  test("words page: edit, reset, delete, add", async () => {
+    const store = new Store(db, TZ);
+    const id = (await store.searchItems("perche")).items[0].id;
+    const post = (path: string, body: Record<string, string>) =>
+      fetch(`${base}/items/${path}`, { method: "POST", body: new URLSearchParams(body), redirect: "manual" });
+    const loc = (r: Response) => new URL(r.headers.get("location") ?? "", base).searchParams;
+    const form = { q: "perche", filter: "all", italian: "perché", english: "why", note: "also: because", context: "non so perché", source: "asked" };
+
+    let res = await post(`${TOKEN}/${id}`, { ...form, action: "save" });
+    assert.equal(res.status, 303);
+    assert.match(res.headers.get("location") ?? "", /msg=Saved.*open=\d+#i\d+/);
+    let row = (await db.query("select english, note from items where id = $1", [id])).rows[0];
+    assert.deepEqual(row, { english: "why", note: "also: because" });
+
+    res = await post(`${TOKEN}/${id}`, { ...form, italian: "Lo Schermo", action: "save" });
+    assert.match(loc(res).get("err") ?? "", /"Lo Schermo" already exists/, "duplicate italian refused");
+
+    await db.query("update items set repetitions = 3, interval_days = 20, due_on = current_date + 20 where id = $1", [id]);
+    await post(`${TOKEN}/${id}`, { ...form, action: "reset" });
+    row = (await db.query("select repetitions, interval_days, due_on from items where id = $1", [id])).rows[0];
+    assert.deepEqual(row, { repetitions: 0, interval_days: 0, due_on: today(TZ) });
+
+    assert.equal((await post(`wrong-token/${id}`, { action: "delete" })).status, 404);
+    await post(`${TOKEN}/${id}`, { action: "delete" });
+    assert.equal((await db.query("select 1 from items where id = $1", [id])).rowCount, 0);
+
+    res = await post(`${TOKEN}/new`, { italian: "sfasciare", english: "to wreck", source: "asked", context: "", note: "" });
+    assert.equal(loc(res).get("msg"), "Added “sfasciare”.");
+    res = await post(`${TOKEN}/new`, { italian: "x", english: "y", source: "bogus" });
+    assert.match(loc(res).get("err") ?? "", /unknown source/);
+  });
+
   test("errors come back as tool errors, not crashes", async () => {
     const r = await call("record_attempt", { item_id: 999999, mode: "word", answer: "x", grade: 5, fillers: 0 });
     assert.equal(r._isError, true);

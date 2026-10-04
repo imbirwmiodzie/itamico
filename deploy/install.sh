@@ -278,8 +278,9 @@ cat <<EOF
 Connector URL (treat it as a password):
   $URL/mcp/$MCP_TOKEN
 
-Learning stats page (same secret, open it in a browser):
+Learning stats page and word editor (same secret, open in a browser):
   $URL/stats/$MCP_TOKEN
+  $URL/items/$MCP_TOKEN
 
 Bearer-token endpoint (OpenAI Realtime, scripts):
   $URL/mcp    Authorization: Bearer $MCP_TOKEN

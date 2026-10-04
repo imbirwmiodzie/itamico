@@ -41,3 +41,9 @@ create table if not exists attempts (
 
 create index if not exists attempts_session_idx on attempts (session_id);
 create index if not exists attempts_item_idx on attempts (item_id);
+
+-- Full-text search for the Words page; must match ITEM_DOC_SQL in src/store.ts.
+create index if not exists items_fts_idx on items using gin (
+  to_tsvector('simple', translate(lower(italian || ' ' || english || ' ' || coalesce(note, '') || ' ' || coalesce(context, '')),
+    'àáâäèéêëìíîïòóôöùúûü', 'aaaaeeeeiiiioooouuuu'))
+);

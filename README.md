@@ -58,6 +58,22 @@ The model assigns the quality from the transcript. The server applies SM-2:
 
 It uses the same token as the connector URL. A wrong token returns 404. The page is sent with `no-store`, `no-referrer` and `noindex`, so the URL isn't cached, passed on to other sites, or picked up by search engines.
 
+## Words page
+
+`https://<host>/items/<MCP_TOKEN>` lets you search and edit the vocabulary. It's linked from the stats page, and the stats page is linked back from it.
+
+- **Search:** full-text search over Italian, English, note and context.
+  - Every word you type must match, and each counts as a prefix (`pell` finds *la pellicola*).
+  - Accents are ignored (`perche` finds *perché*).
+  - Parts of words also match (`ellicol`).
+  - It uses a Postgres GIN index on a `'simple'` text configuration, with no extensions needed.
+- **Filters:** all words, due today, missing context, or ever failed.
+- **Editing:** tap a word to change its Italian, English, note, context or source; its learning progress is kept. **Make due today** restarts its learning. **Delete** removes it together with its answer history.
+- **Answer history:** each word shows its last 10 answers (time, prompt, answer, grade, fillers).
+- **Add a word:** adds a word by hand. An existing word isn't duplicated; it becomes due today again.
+
+Like the stats page, it's guarded by the token and sent with `no-store`, `no-referrer` and `noindex`.
+
 ## Decisions beyond the brief
 
 These are things the requirements left open, or places where a small change made the voice loop more robust.

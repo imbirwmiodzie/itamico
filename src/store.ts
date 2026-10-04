@@ -10,6 +10,27 @@ import { loadStats } from "./stats.js";
 export type Mode = "word" | "sentence";
 export type Source = "asked" | "fallback" | "error" | "topic_check";
 export type ListFilter = "due" | "recent" | "all";
+export type ItemFilter = "all" | "due" | "nocontext" | "failed";
+export const SOURCES: Source[] = ["asked", "fallback", "error", "topic_check"];
+
+// Full-text search: one 'simple' (language-agnostic) document per item, over
+// all four text fields, lower-cased and with Italian accents folded so "perche"
+// finds "perché". The same expression backs the GIN index in schema.sql.
+const FOLD_FROM = "àáâäèéêëìíîïòóôöùúûü";
+const FOLD_TO = "aaaaeeeeiiiioooouuuu";
+const ITEM_TEXT_SQL = `translate(lower(italian || ' ' || english || ' ' || coalesce(note, '') || ' ' || coalesce(context, '')), '${FOLD_FROM}', '${FOLD_TO}')`;
+const ITEM_DOC_SQL = `to_tsvector('simple', ${ITEM_TEXT_SQL})`;
+
+export function foldText(s: string): string {
+  let out = s.toLowerCase();
+  for (let i = 0; i < FOLD_FROM.length; i++) out = out.replaceAll(FOLD_FROM[i], FOLD_TO[i]);
+  return out;
+}
+
+/** Search words as prefix terms for to_tsquery: letters and digits only, so input can't inject query syntax. */
+export function searchTerms(q: string): string[] {
+  return foldText(q).split(/[^\p{L}\p{N}]+/u).filter(Boolean).slice(0, 8);
+}
 
 /** Word mode only drills items short enough to say in one breath while riding. */
 export const WORD_MODE_MAX_WORDS = 4;
@@ -255,6 +276,84 @@ export class Store {
     );
     const total = await this.db.query(`select count(*)::int as n from items`);
     return { filter, items: rows.map(compact), returned: rows.length, total_items: total.rows[0].n as number };
+  }
+
+  /**
+   * Full-text search over italian, english, note and context (prefix match per
+   * word, all words required), with a substring fallback for mid-word matches.
+   * Without a query, most recently captured first.
+   */
+  async searchItems(q: string, filter: ItemFilter = "all", limit = 100) {
+    const params: unknown[] = [this.today(), this.timeZone];
+    const where: string[] = [];
+    let order = "i.last_captured_at desc, i.id desc";
+    const terms = searchTerms(q);
+    if (terms.length) {
+      params.push(terms.map((t) => `${t}:*`).join(" & "));
+      const tsq = `to_tsquery('simple', $${params.length})`;
+      params.push(`%${foldText(q.trim()).replace(/[\\%_]/g, (c) => "\\" + c)}%`);
+      where.push(`(${ITEM_DOC_SQL} @@ ${tsq} or ${ITEM_TEXT_SQL} like $${params.length})`);
+      params.push(foldText(q.trim()));
+      // An exact match on the Italian first, then best full-text rank.
+      order = `(translate(lower(i.italian), '${FOLD_FROM}', '${FOLD_TO}') = $${params.length}) desc, ts_rank(${ITEM_DOC_SQL}, ${tsq}) desc, lower(i.italian)`;
+    }
+    if (filter === "due") where.push("i.due_on <= $1");
+    if (filter === "nocontext") where.push("i.context is null");
+    if (filter === "failed") where.push("exists (select 1 from attempts a where a.item_id = i.id and a.grade < 3)");
+    params.push(limit);
+    const { rows } = await this.db.query(
+      `select i.id::int as id, i.italian, i.english, i.note, i.context, i.source,
+              round(i.ease::numeric, 2)::float as ease, i.interval_days, i.repetitions, i.due_on,
+              (i.due_on <= $1) as due,
+              to_char(i.created_at at time zone $2, 'YYYY-MM-DD') as created,
+              (select count(*)::int from attempts a where a.item_id = i.id) as attempts,
+              (select coalesce(json_agg(h), '[]'::json) from (
+                 select to_char(a.at at time zone $2, 'YYYY-MM-DD HH24:MI') as at, a.mode, a.prompt, a.answer, a.grade, a.fillers
+                   from attempts a where a.item_id = i.id order by a.at desc limit 10) h) as history,
+              count(*) over ()::int as total
+         from items i
+        ${where.length ? `where ${where.join(" and ")}` : ""}
+        order by ${order}
+        limit $${params.length}`,
+      params,
+    );
+    return { items: rows.map(({ total, ...r }) => r), total: (rows[0]?.total as number) ?? 0 };
+  }
+
+  /** Edit an item's text fields; learning progress is untouched. */
+  async updateItem(id: number, f: { italian: string; english: string; note?: string; context?: string; source: string }) {
+    const italian = normalizeItalian(f.italian);
+    const english = f.english.trim();
+    if (!italian || !english) throw new TutorError("Italian and English must not be empty");
+    if (!SOURCES.includes(f.source as Source)) throw new TutorError(`unknown source "${f.source}"`);
+    try {
+      const { rows } = await this.db.query(
+        `update items set italian = $2, english = $3, note = $4, context = $5, source = $6 where id = $1 returning italian`,
+        [id, italian, english, blankToNull(f.note), blankToNull(f.context), f.source],
+      );
+      if (!rows[0]) throw new TutorError(`item ${id} not found`);
+      return rows[0].italian as string;
+    } catch (e) {
+      if ((e as { code?: string }).code === "23505") throw new TutorError(`"${italian}" already exists`);
+      throw e;
+    }
+  }
+
+  /** Make an item due today and start its learning over (ease is kept). */
+  async resetItem(id: number) {
+    const { rows } = await this.db.query(
+      `update items set repetitions = 0, interval_days = 0, due_on = $2 where id = $1 returning italian`,
+      [id, this.today()],
+    );
+    if (!rows[0]) throw new TutorError(`item ${id} not found`);
+    return rows[0].italian as string;
+  }
+
+  /** Delete an item and its answer history. */
+  async deleteItem(id: number) {
+    const { rows } = await this.db.query(`delete from items where id = $1 returning italian`, [id]);
+    if (!rows[0]) throw new TutorError(`item ${id} not found`);
+    return rows[0].italian as string;
   }
 
   stats() {
