@@ -105,6 +105,8 @@ sudo DOMAIN=tutor.example.com ./deploy/install.sh   # omit DOMAIN to use <ip>.ss
 
 For a public HTTPS port other than 443, add `HTTPS_PORT=28443`. Port 80 must still reach the machine, because Let's Encrypt checks the domain over port 80 when it issues and renews the certificate.
 
+To start without a certificate, add `PLAIN_HTTP=1`. Caddy then serves plain HTTP on `HTTPS_PORT`, and port 80 isn't needed. Use this only for testing: traffic, including the token, is unencrypted, and Claude connectors require `https://`. Re-run with `PLAIN_HTTP=0` to switch to HTTPS.
+
 It prints the connector URL at the end. Re-run it after `git pull` to update; the token and data are kept.
 
 **Push from your computer over SSH** (no GitHub access needed on the server):

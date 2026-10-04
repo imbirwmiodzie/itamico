@@ -15,7 +15,7 @@
 #   SSH_KEY      private key file                 (default: your SSH agent / config)
 #   REMOTE_DIR   where the code goes on the server: absolute, or relative to the
 #                login's home (default: itamico)
-#   DOMAIN, HTTPS_PORT, TUTOR_TZ, DATABASE_URL, NO_CADDY
+#   DOMAIN, HTTPS_PORT, PLAIN_HTTP, TUTOR_TZ, DATABASE_URL, NO_CADDY
 #                passed through to deploy/install.sh on the server
 #
 # What it sends: every file git tracks or would track (respects .gitignore),
@@ -110,7 +110,7 @@ fi
 
 # Pass installer settings through, quoted for the remote shell.
 ENV_ARGS=""
-for v in DOMAIN HTTPS_PORT TUTOR_TZ DATABASE_URL NO_CADDY MCP_TOKEN; do
+for v in DOMAIN HTTPS_PORT PLAIN_HTTP TUTOR_TZ DATABASE_URL NO_CADDY MCP_TOKEN; do
   [[ -n ${!v:-} ]] && ENV_ARGS+=" $v=$(printf %q "${!v}")"
 done
 

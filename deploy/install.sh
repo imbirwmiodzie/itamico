@@ -18,6 +18,9 @@
 #   DATABASE_URL  external Postgres. Default: local Postgres, created here
 #   TUTOR_TZ      time zone for "due today". Default: Europe/Warsaw
 #   MCP_TOKEN     secret token. Default: generated on first install, kept on updates
+#   PLAIN_HTTP=1  no certificate: serve plain http on HTTPS_PORT. No port 80 needed, but
+#                 traffic (including the token) is unencrypted, and Claude connectors
+#                 require https. For testing; re-run with PLAIN_HTTP=0 to switch to https.
 #   NO_CADDY=1    skip Caddy (you already have a reverse proxy / tunnel to 127.0.0.1:8080)
 #
 # Safe to re-run: it updates the code, keeps the token and the database, restarts.
@@ -46,11 +49,13 @@ if [[ -f $ENV_FILE ]]; then
   TUTOR_TZ=${TUTOR_TZ:-$(prev TUTOR_TZ)}
   DOMAIN=${DOMAIN:-$(prev DOMAIN)}
   HTTPS_PORT=${HTTPS_PORT:-$(prev HTTPS_PORT)}
+  PLAIN_HTTP=${PLAIN_HTTP:-$(prev PLAIN_HTTP)}
 fi
+[[ ${PLAIN_HTTP:-0} == 1 ]] && PLAIN_HTTP=1 || PLAIN_HTTP=0
 TUTOR_TZ=${TUTOR_TZ:-Europe/Warsaw}
 HTTPS_PORT=${HTTPS_PORT:-443}
 [[ $HTTPS_PORT =~ ^[0-9]+$ && $HTTPS_PORT -ge 1 && $HTTPS_PORT -le 65535 ]] || die "HTTPS_PORT must be a port number"
-[[ $HTTPS_PORT != 80 ]] || die "HTTPS_PORT cannot be 80: Caddy needs port 80 for the certificate check"
+[[ $HTTPS_PORT != 80 || $PLAIN_HTTP == 1 ]] || die "HTTPS_PORT cannot be 80: Caddy needs port 80 for the certificate check"
 PORT=8080  # internal app port, loopback only
 
 log "Installing base packages"
@@ -81,7 +86,7 @@ if [[ -z ${DATABASE_URL:-} ]]; then
   DATABASE_URL="postgres://tutor:$DB_PASS@127.0.0.1:5432/tutor"
 fi
 
-if [[ -z ${DOMAIN:-} && -z ${NO_CADDY:-} ]]; then
+if [[ -z ${DOMAIN:-} && -z ${NO_CADDY:-} && $PLAIN_HTTP == 0 ]]; then
   IP=$(curl -4 -fsS https://api.ipify.org || true)
   [[ -n $IP ]] || die "could not detect the public IP; pass DOMAIN=..."
   DOMAIN="${IP//./-}.sslip.io"
@@ -100,6 +105,7 @@ HOST=127.0.0.1
 PORT=$PORT
 DOMAIN=${DOMAIN:-}
 HTTPS_PORT=$HTTPS_PORT
+PLAIN_HTTP=$PLAIN_HTTP
 EOF
 chmod 600 "$ENV_FILE"
 umask 022
@@ -156,52 +162,77 @@ if [[ -z ${NO_CADDY:-} ]]; then
     apt-get update -qq
     apt-get install -y -qq caddy >/dev/null
   fi
-  if [[ $HTTPS_PORT == 443 ]]; then PUBLIC="$DOMAIN"; else PUBLIC="$DOMAIN:$HTTPS_PORT"; fi
-  log "Configuring Caddy for https://$PUBLIC"
+  if [[ $PLAIN_HTTP == 1 ]]; then
+    HOST_NAME=${DOMAIN:-$(curl -4 -fsS https://api.ipify.org || echo '<server-ip>')}
+    PUBLIC="$HOST_NAME:$HTTPS_PORT"
+    SCHEME=http
+    SITE="http://:$HTTPS_PORT"  # any host name or bare IP, no certificate
+    PORTS=("$HTTPS_PORT")
+  else
+    if [[ $HTTPS_PORT == 443 ]]; then PUBLIC="$DOMAIN"; else PUBLIC="$DOMAIN:$HTTPS_PORT"; fi
+    SCHEME=https
+    SITE=$PUBLIC
+    PORTS=(80 "$HTTPS_PORT")  # 80: Let's Encrypt checks the domain there
+  fi
+  log "Configuring Caddy for $SCHEME://$PUBLIC"
   # No access log: the connector URL carries the token.
   cat >/etc/caddy/Caddyfile <<EOF
-$PUBLIC {
+$SITE {
 	encode gzip
 	reverse_proxy 127.0.0.1:$PORT
 }
 EOF
   if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
-    ufw allow 80/tcp >/dev/null
-    ufw allow "$HTTPS_PORT/tcp" >/dev/null
+    for p in "${PORTS[@]}"; do ufw allow "$p/tcp" >/dev/null; done
   elif command -v iptables >/dev/null && iptables -S INPUT 2>/dev/null | grep -q -- "-j REJECT"; then
     # Oracle Cloud images ship iptables rules that reject everything but SSH.
-    for p in 80 "$HTTPS_PORT"; do
+    for p in "${PORTS[@]}"; do
       iptables -C INPUT -p tcp --dport "$p" -m state --state NEW -j ACCEPT 2>/dev/null \
         || iptables -I INPUT 1 -p tcp --dport "$p" -m state --state NEW -j ACCEPT
     done
     command -v netfilter-persistent >/dev/null && netfilter-persistent save >/dev/null 2>&1 || true
-    echo "Opened ports 80 and $HTTPS_PORT in iptables"
+    echo "Opened port(s) ${PORTS[*]} in iptables"
   fi
   systemctl enable caddy >/dev/null
   systemctl reload-or-restart caddy
 
-  printf 'Waiting for the HTTPS certificate'
+  if [[ $PLAIN_HTTP == 1 ]]; then
+    CHECK="http://127.0.0.1:$HTTPS_PORT/health"
+    printf 'Waiting for Caddy'
+  else
+    CHECK="https://$PUBLIC/health"
+    printf 'Waiting for the HTTPS certificate'
+  fi
   for _ in $(seq 1 30); do
-    curl -fsS "https://$PUBLIC/health" >/dev/null 2>&1 && break
+    curl -fsS "$CHECK" >/dev/null 2>&1 && break
     printf '.'
     sleep 2
   done
   echo
-  if curl -fsS "https://$PUBLIC/health" >/dev/null 2>&1; then
-    echo "https://$PUBLIC/health is up"
+  if curl -fsS "$CHECK" >/dev/null 2>&1; then
+    echo "$CHECK is up"
   else
-    echo "HTTPS is not answering yet. Check that $DOMAIN points at this machine and ports 80 and $HTTPS_PORT are open"
-    echo "(cloud firewall / security group too), then: journalctl -u caddy -n 50"
-    echo "On Oracle Cloud: add ingress rules for both ports to the subnet's Security List."
+    echo "$CHECK is not answering yet. Check that port(s) ${PORTS[*]} are open on this machine"
+    [[ $PLAIN_HTTP == 0 ]] && echo "and that $DOMAIN points at it."
+    echo "Cloud firewalls too (on Oracle Cloud: ingress rules in the subnet's Security List)."
+    echo "Logs: journalctl -u caddy -n 50"
   fi
-  URL="https://$PUBLIC"
+  URL="$SCHEME://$PUBLIC"
 else
   URL="https://<your-proxy-host>"
 fi
 
 log "Done"
+if [[ $PLAIN_HTTP == 1 && -z ${NO_CADDY:-} ]]; then
+  cat <<EOF
+Plain HTTP mode: no certificate, traffic is unencrypted. Claude connectors need
+https, so use this URL for testing with curl/scripts until you switch:
+re-run with PLAIN_HTTP=0 (and open port 80) to get a certificate.
+
+EOF
+fi
 cat <<EOF
-Claude connector URL (treat it as a password):
+Connector URL (treat it as a password):
   $URL/mcp/$MCP_TOKEN
 
 Bearer-token endpoint (OpenAI Realtime, scripts):
