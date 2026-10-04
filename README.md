@@ -107,6 +107,14 @@ For a public HTTPS port other than 443, add `HTTPS_PORT=28443`. Port 80 must sti
 
 To start without a certificate, add `PLAIN_HTTP=1`. Caddy then serves plain HTTP on `HTTPS_PORT`, and port 80 isn't needed. Use this only for testing: traffic, including the token, is unencrypted, and Claude connectors require `https://`. Re-run with `PLAIN_HTTP=0` to switch to HTTPS.
 
+**Behind Cloudflare** (Cloudflare manages the public certificate, and port 80 isn't needed): add `BEHIND_CLOUDFLARE=1` with `DOMAIN` set to the proxied hostname. Caddy then serves `HTTPS_PORT` with a self-signed certificate. In the Cloudflare dashboard, set three things:
+
+1. **DNS:** an `A` record pointing the hostname at the server, with **Proxied** (orange cloud) on.
+2. **SSL/TLS → Overview:** mode **Full**. Not "Flexible", and not "Full (strict)".
+3. **Rules → Origin Rules:** the hostname goes to destination port `HTTPS_PORT`. Cloudflare only forwards to a fixed list of ports, and 28443 isn't one of them.
+
+The public URL is then `https://<hostname>` with no port.
+
 It prints the connector URL at the end. Re-run it after `git pull` to update; the token and data are kept.
 
 **Push from your computer over SSH** (no GitHub access needed on the server):

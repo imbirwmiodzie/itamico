@@ -21,6 +21,12 @@
 #   PLAIN_HTTP=1  no certificate: serve plain http on HTTPS_PORT. No port 80 needed, but
 #                 traffic (including the token) is unencrypted, and Claude connectors
 #                 require https. For testing; re-run with PLAIN_HTTP=0 to switch to https.
+#   BEHIND_CLOUDFLARE=1
+#                 the DOMAIN is proxied by Cloudflare (orange cloud), which holds the
+#                 public certificate. Caddy serves HTTPS_PORT with a self-signed
+#                 certificate (Cloudflare SSL mode "Full" accepts it); no port 80.
+#                 Add a Cloudflare Origin Rule sending DOMAIN to HTTPS_PORT, and the
+#                 public URL is https://DOMAIN with no port.
 #   NO_CADDY=1    skip Caddy (you already have a reverse proxy / tunnel to 127.0.0.1:8080)
 #
 # Safe to re-run: it updates the code, keeps the token and the database, restarts.
@@ -50,12 +56,16 @@ if [[ -f $ENV_FILE ]]; then
   DOMAIN=${DOMAIN:-$(prev DOMAIN)}
   HTTPS_PORT=${HTTPS_PORT:-$(prev HTTPS_PORT)}
   PLAIN_HTTP=${PLAIN_HTTP:-$(prev PLAIN_HTTP)}
+  BEHIND_CLOUDFLARE=${BEHIND_CLOUDFLARE:-$(prev BEHIND_CLOUDFLARE)}
 fi
 [[ ${PLAIN_HTTP:-0} == 1 ]] && PLAIN_HTTP=1 || PLAIN_HTTP=0
+[[ ${BEHIND_CLOUDFLARE:-0} == 1 ]] && BEHIND_CLOUDFLARE=1 || BEHIND_CLOUDFLARE=0
+[[ $PLAIN_HTTP == 1 && $BEHIND_CLOUDFLARE == 1 ]] && die "choose one of PLAIN_HTTP=1 and BEHIND_CLOUDFLARE=1"
+[[ $BEHIND_CLOUDFLARE == 0 || -n ${DOMAIN:-} ]] || die "BEHIND_CLOUDFLARE=1 needs DOMAIN (the hostname proxied by Cloudflare)"
 TUTOR_TZ=${TUTOR_TZ:-Europe/Warsaw}
 HTTPS_PORT=${HTTPS_PORT:-443}
 [[ $HTTPS_PORT =~ ^[0-9]+$ && $HTTPS_PORT -ge 1 && $HTTPS_PORT -le 65535 ]] || die "HTTPS_PORT must be a port number"
-[[ $HTTPS_PORT != 80 || $PLAIN_HTTP == 1 ]] || die "HTTPS_PORT cannot be 80: Caddy needs port 80 for the certificate check"
+[[ $HTTPS_PORT != 80 || $PLAIN_HTTP == 1 || $BEHIND_CLOUDFLARE == 1 ]] || die "HTTPS_PORT cannot be 80: Caddy needs port 80 for the certificate check"
 PORT=8080  # internal app port, loopback only
 
 log "Installing base packages"
@@ -86,7 +96,7 @@ if [[ -z ${DATABASE_URL:-} ]]; then
   DATABASE_URL="postgres://tutor:$DB_PASS@127.0.0.1:5432/tutor"
 fi
 
-if [[ -z ${DOMAIN:-} && -z ${NO_CADDY:-} && $PLAIN_HTTP == 0 ]]; then
+if [[ -z ${DOMAIN:-} && -z ${NO_CADDY:-} && $PLAIN_HTTP == 0 && $BEHIND_CLOUDFLARE == 0 ]]; then
   IP=$(curl -4 -fsS https://api.ipify.org || true)
   [[ -n $IP ]] || die "could not detect the public IP; pass DOMAIN=..."
   DOMAIN="${IP//./-}.sslip.io"
@@ -106,6 +116,7 @@ PORT=$PORT
 DOMAIN=${DOMAIN:-}
 HTTPS_PORT=$HTTPS_PORT
 PLAIN_HTTP=$PLAIN_HTTP
+BEHIND_CLOUDFLARE=$BEHIND_CLOUDFLARE
 EOF
 chmod 600 "$ENV_FILE"
 umask 022
@@ -168,16 +179,31 @@ if [[ -z ${NO_CADDY:-} ]]; then
     SCHEME=http
     SITE="http://:$HTTPS_PORT"  # any host name or bare IP, no certificate
     PORTS=("$HTTPS_PORT")
+    TLS_LINE=""
+  elif [[ $BEHIND_CLOUDFLARE == 1 ]]; then
+    PUBLIC=$DOMAIN  # Cloudflare listens on 443; an Origin Rule forwards to HTTPS_PORT
+    SCHEME=https
+    SITE="$DOMAIN:$HTTPS_PORT"
+    PORTS=("$HTTPS_PORT")
+    TLS_LINE="tls internal"  # self-signed; Cloudflare SSL mode "Full" accepts it
   else
     if [[ $HTTPS_PORT == 443 ]]; then PUBLIC="$DOMAIN"; else PUBLIC="$DOMAIN:$HTTPS_PORT"; fi
     SCHEME=https
     SITE=$PUBLIC
     PORTS=(80 "$HTTPS_PORT")  # 80: Let's Encrypt checks the domain there
+    TLS_LINE=""
   fi
   log "Configuring Caddy for $SCHEME://$PUBLIC"
   # No access log: the connector URL carries the token.
+  if [[ $BEHIND_CLOUDFLARE == 1 ]]; then
+    # No redirect listener on :80, and don't try to add Caddy's local CA to the system trust.
+    GLOBAL=$'{\n\tauto_https disable_redirects\n\tskip_install_trust\n}\n\n'
+  else
+    GLOBAL=""
+  fi
   cat >/etc/caddy/Caddyfile <<EOF
-$SITE {
+$GLOBAL$SITE {
+	$TLS_LINE
 	encode gzip
 	reverse_proxy 127.0.0.1:$PORT
 }
@@ -196,24 +222,30 @@ EOF
   systemctl enable caddy >/dev/null
   systemctl reload-or-restart caddy
 
+  CURL_OPTS=()
   if [[ $PLAIN_HTTP == 1 ]]; then
     CHECK="http://127.0.0.1:$HTTPS_PORT/health"
+    printf 'Waiting for Caddy'
+  elif [[ $BEHIND_CLOUDFLARE == 1 ]]; then
+    # Check the origin directly: self-signed (-k), name resolved to this machine.
+    CHECK="https://$DOMAIN:$HTTPS_PORT/health"
+    CURL_OPTS=(-k --noproxy "*" --resolve "$DOMAIN:$HTTPS_PORT:127.0.0.1")
     printf 'Waiting for Caddy'
   else
     CHECK="https://$PUBLIC/health"
     printf 'Waiting for the HTTPS certificate'
   fi
   for _ in $(seq 1 30); do
-    curl -fsS "$CHECK" >/dev/null 2>&1 && break
+    curl -fsS "${CURL_OPTS[@]}" "$CHECK" >/dev/null 2>&1 && break
     printf '.'
     sleep 2
   done
   echo
-  if curl -fsS "$CHECK" >/dev/null 2>&1; then
+  if curl -fsS "${CURL_OPTS[@]}" "$CHECK" >/dev/null 2>&1; then
     echo "$CHECK is up"
   else
     echo "$CHECK is not answering yet. Check that port(s) ${PORTS[*]} are open on this machine"
-    [[ $PLAIN_HTTP == 0 ]] && echo "and that $DOMAIN points at it."
+    [[ $PLAIN_HTTP == 0 && $BEHIND_CLOUDFLARE == 0 ]] && echo "and that $DOMAIN points at it."
     echo "Cloud firewalls too (on Oracle Cloud: ingress rules in the subnet's Security List)."
     echo "Logs: journalctl -u caddy -n 50"
   fi
@@ -228,6 +260,17 @@ if [[ $PLAIN_HTTP == 1 && -z ${NO_CADDY:-} ]]; then
 Plain HTTP mode: no certificate, traffic is unencrypted. Claude connectors need
 https, so use this URL for testing with curl/scripts until you switch:
 re-run with PLAIN_HTTP=0 (and open port 80) to get a certificate.
+
+EOF
+fi
+if [[ $BEHIND_CLOUDFLARE == 1 && -z ${NO_CADDY:-} ]]; then
+  cat <<EOF
+Cloudflare mode. The origin answers on port $HTTPS_PORT with a self-signed certificate.
+In the Cloudflare dashboard for your domain, if not done yet:
+  1. DNS: A record $DOMAIN -> this server's IP, Proxy status "Proxied" (orange cloud)
+  2. SSL/TLS -> Overview: encryption mode "Full" (not "Full (strict)", not "Flexible")
+  3. Rules -> Origin Rules: Hostname equals $DOMAIN -> Destination Port $HTTPS_PORT
+Test from your computer: curl https://$DOMAIN/health
 
 EOF
 fi
