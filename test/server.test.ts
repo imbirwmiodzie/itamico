@@ -121,6 +121,10 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.equal(word.held_for_sentence_mode, 1);
     assert.equal(word.due_total, 3);
     assert.equal(word.items[0].new, true);
+    // The context (which contains the answer) is kept apart from the prompt.
+    const tragitto = word.items.find((i: { italian: string }) => i.italian === "tragitto");
+    assert.equal(tragitto.context, undefined);
+    assert.equal(tragitto.after_answer.context, "what does tragitto mean");
     const sentence = await call("get_due_items", { mode: "sentence", limit: 10 });
     assert.equal(sentence.items.length, 3);
 

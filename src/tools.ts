@@ -72,7 +72,7 @@ export function buildServer(store: Store): McpServer {
     "get_due_items",
     {
       title: "Get due items",
-      description: `Items due for review, oldest due date first, then lowest ease. mode 'word' (cycling): only items of ${WORD_MODE_MAX_WORDS} words or fewer; say the English, the user answers in Italian. mode 'sentence' (car/home): all due items; invent a NEW English sentence containing the item every time (never reuse one) and have the user translate it aloud. held_for_sentence_mode counts longer items skipped in word mode. Items marked new have never been recalled successfully; context is where the gap first came up.`,
+      description: `Items due for review, oldest due date first, then lowest ease. mode 'word' (cycling): only items of ${WORD_MODE_MAX_WORDS} words or fewer; say the English, the user answers in Italian. mode 'sentence' (car/home): all due items; invent a NEW English sentence containing the item every time (never reuse one) and have the user translate it aloud. held_for_sentence_mode counts longer items skipped in word mode. Each item: english = what you say as the prompt; italian = the answer; after_answer = note and the sentence where the gap first came up. NEVER say anything from italian or after_answer before the user has answered: the context usually contains the answer. Hints are the first syllable or a related word, never the context. After the answer you may use after_answer in a few words (e.g. when correcting). Items marked new have never been recalled successfully.`,
       inputSchema: {
         mode,
         limit: z.number().int().min(1).max(50).optional().describe("Default 10"),

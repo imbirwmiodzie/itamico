@@ -193,7 +193,19 @@ export class Store {
     );
     const counts = await this.db.query(`select count(*)::int as n from items where due_on <= $1`, [day]);
     const total = counts.rows[0].n as number;
-    const items = rows.map(({ repetitions, ...r }) => compact({ ...r, new: repetitions === 0 ? true : undefined }));
+    // The context sentence and note usually contain the answer ("non so perché"),
+    // so they travel apart from the prompt, under a name that says when to use them.
+    const items = rows.map((r) => {
+      const after = compact({ note: r.note, context: r.context });
+      return compact({
+        id: r.id,
+        english: r.english,
+        italian: r.italian,
+        new: r.repetitions === 0 ? true : undefined,
+        due_on: r.due_on,
+        after_answer: Object.keys(after).length ? after : undefined,
+      });
+    });
     const result: Record<string, unknown> = { mode, items, due_total: total };
     if (wordOnly && total > 0) {
       const eligible = await this.db.query(
