@@ -196,6 +196,27 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.notEqual(rows[0].ended_at, null);
   });
 
+  test("stats page: token-guarded, renders data, escapes user text", async () => {
+    assert.equal((await fetch(`${base}/stats/wrong-token`)).status, 404);
+    await call("capture_item", {
+      italian: "la pellicola",
+      english: "plastic wrap",
+      context: "<script>alert(1)</script> how do you say plastic wrap?",
+      source: "asked",
+    });
+    const res = await fetch(`${base}/stats/${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type") ?? "", /text\/html/);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    assert.equal(res.headers.get("referrer-policy"), "no-referrer");
+    const html = await res.text();
+    assert.match(html, /Italian progress/);
+    assert.match(html, /la pellicola/);
+    assert.match(html, /Answers per day/);
+    assert.ok(!html.includes("<script>alert(1)</script>"), "user text must be escaped");
+    assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  });
+
   test("errors come back as tool errors, not crashes", async () => {
     const r = await call("record_attempt", { item_id: 999999, mode: "word", answer: "x", grade: 5, fillers: 0 });
     assert.equal(r._isError, true);

@@ -45,6 +45,19 @@ The model assigns the quality from the transcript. The server applies SM-2:
 - **Fail (q < 3):** repetitions reset and the interval drops to 1 day.
 - **Ease:** updated by the standard SM-2 formula on every answer and floored at 1.3. The new interval uses the updated ease, so a low pass grows more slowly.
 
+## Stats page
+
+`https://<host>/stats/<MCP_TOKEN>` is a progress page for a browser, built for phones and desktops in light and dark mode. It shows:
+
+- **Headline numbers:** due today, practice streak, pass rate and fillers per answer over the last 7 days, and how many words are learned.
+- **Answers per day** for the last 30 days, split into passed and failed.
+- **Hesitation trend:** average filler sounds per answer per day.
+- **Where your words are:** how many are not yet recalled, learning, young or mature.
+- **Coming up:** reviews due per day for the next two weeks.
+- **Hardest words** and **recently captured words**, with their context.
+
+It uses the same token as the connector URL. A wrong token returns 404. The page is sent with `no-store`, `no-referrer` and `noindex`, so the URL isn't cached, passed on to other sites, or picked up by search engines.
+
 ## Decisions beyond the brief
 
 These are things the requirements left open, or places where a small change made the voice loop more robust.

@@ -5,6 +5,7 @@ import type pg from "pg";
 import type { Db } from "./db.js";
 import { today } from "./db.js";
 import { capGrade, countFillers, sm2 } from "./grading.js";
+import { loadStats } from "./stats.js";
 
 export type Mode = "word" | "sentence";
 export type Source = "asked" | "fallback" | "error" | "topic_check";
@@ -254,6 +255,10 @@ export class Store {
     );
     const total = await this.db.query(`select count(*)::int as n from items`);
     return { filter, items: rows.map(compact), returned: rows.length, total_items: total.rows[0].n as number };
+  }
+
+  stats() {
+    return loadStats(this.db, this.timeZone);
   }
 
   // ----------------------------------------------------------------- helpers

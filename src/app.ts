@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { Store } from "./store.js";
+import { renderStats } from "./stats.js";
 import { buildServer } from "./tools.js";
 
 /**
@@ -64,6 +65,21 @@ export function createApp(store: Store, token: string) {
 
   app.all("/mcp", auth, handle);
   app.all("/mcp/:token", auth, handle);
+
+  // Learning stats page. Same token as the connector URL; the URL is the secret,
+  // so keep it out of caches, referrers and search engines.
+  app.get("/stats/:token", auth, async (_req, res) => {
+    try {
+      const html = renderStats(await store.stats());
+      res
+        .set({ "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex" })
+        .type("html")
+        .send(html);
+    } catch (e) {
+      console.error(e);
+      res.status(500).type("text").send("Could not load stats.");
+    }
+  });
   return app;
 }
 
