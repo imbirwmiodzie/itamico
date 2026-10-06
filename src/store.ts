@@ -467,6 +467,45 @@ export class Store {
     return rows[0].italian as string;
   }
 
+  /** Every word for the game, with what it needs to weight them, and the best score so far. */
+  async gameItems(limit = 1000) {
+    const { rows } = await this.db.query(
+      `select i.id::int as id, i.italian, i.english, i.ease, (i.due_on <= $1) as due,
+              (select count(*)::int from attempts a where a.item_id = i.id and a.grade < 3) as lapses,
+              floor(extract(epoch from p.fetched_at))::float8 as pic
+         from items i left join pictures p on p.item_id = i.id
+        order by i.id
+        limit $2`,
+      [this.today(), limit],
+    );
+    const g = await this.db.query(`select coalesce(max(score), 0)::int as best, count(*)::int as plays from game_rounds`);
+    return {
+      items: rows as { id: number; italian: string; english: string; ease: number; due: boolean; lapses: number; pic: number | null }[],
+      best: g.rows[0].best as number,
+      plays: g.rows[0].plays as number,
+    };
+  }
+
+  /** Save a finished game round; `record` when it beats every earlier one. */
+  async saveGameRound(r: { score: number; answered: number; correct: number; streak: number }) {
+    return this.tx(async (c) => {
+      const prev = await c.query(`select max(score)::int as best from game_rounds`);
+      await c.query(`insert into game_rounds (score, answered, correct, best_streak) values ($1, $2, $3, $4)`, [r.score, r.answered, r.correct, r.streak]);
+      const plays = (await c.query(`select count(*)::int as n from game_rounds`)).rows[0].n as number;
+      const previous = prev.rows[0].best as number | null;
+      return { best: Math.max(previous ?? 0, r.score), previous, plays, record: r.score > 0 && r.score > (previous ?? 0) };
+    });
+  }
+
+  /**
+   * Make words due today without restarting their learning, unlike resetItem:
+   * the next drill asks them, and its grade schedules them as usual.
+   */
+  async bringForward(ids: number[]) {
+    const { rowCount } = await this.db.query(`update items set due_on = least(due_on, $2) where id = any($1::bigint[])`, [ids, this.today()]);
+    return rowCount ?? 0;
+  }
+
   /** Delete an item and its answer history. */
   async deleteItem(id: number) {
     const { rows } = await this.db.query(`delete from items where id = $1 returning italian`, [id]);

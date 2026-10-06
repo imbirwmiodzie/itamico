@@ -58,6 +58,25 @@ The model assigns the quality from the transcript. The server applies SM-2:
 
 The design is a card with an Italian tricolour edge, in light and dark mode, and it works on phones. It's guarded by the same token and sent with the same private headers as the other pages. The page needs JavaScript; the other pages don't.
 
+## Game page
+
+`https://<host>/game/<MCP_TOKEN>` is **Lampo** ("lightning"), a 60-second game with your own words, for when you're off the bike and have a minute.
+
+- **Rounds:** each shows a prompt and four answers; tap the right one, or press 1–4. The rounds mix English → Italian, Italian → English, a word's photo → Italian, and **trappola** (trap): the word hidden among look-alikes built from typical learner mistakes:
+  - the wrong article (*lo pellicola*)
+  - an ending that no longer agrees with the article (*la pellicolo*)
+  - one consonant too many or too few (*la pelicola*, *la pellicolla*)
+  - a lost or wrong accent (*perche*, *perchè*)
+  - c/ch and g/gh mixed up (*il giaccio*)
+
+  A look-alike that is one of your other words is never used, and a bare adjective keeps its ending, since *stanca* would be just as right as *stanco*.
+- **Scoring:** 10 points per answer, doubled after 3 in a row, tripled after 6, quadrupled after 10. A miss costs 3 seconds and the streak.
+- **Which words:** all of them, but hard ones come up more often: low ease, past failures, and anything due today.
+- **Scores:** each round is saved, so the best score follows you across devices.
+- **Missed words:** the end screen lists them with what you picked. **Drill these today** makes them due today without restarting their learning, so the next drill, by voice or on screen, asks them.
+
+Picking from four is recognition, much easier than recalling a word, so the game never changes when words are due on its own.
+
 ## Poster page
 
 `https://<host>/poster/<MCP_TOKEN>` turns the words you forget most into something to print and put up at home. It's linked from the nav and from **Hardest words** on the stats page.
@@ -306,6 +325,7 @@ src/tools.ts     MCP tool definitions (descriptions double as tutor guidance)
 src/store.ts     sessions/timer, capture, due items, attempts
 src/grading.ts   SM-2, filler counting, grade capping
 src/drill.ts     the Drill page (/drill/<token>)
+src/game.ts      the Lampo game (/game/<token>) and its trap look-alikes
 src/stats.ts     the stats page (/stats/<token>)
 src/items.ts     the Words page (/items/<token>)
 src/poster.ts    the printable poster (/poster/<token>)

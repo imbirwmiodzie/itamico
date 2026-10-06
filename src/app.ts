@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { renderDrill } from "./drill.js";
+import { renderGame } from "./game.js";
 import { type ItemsView, renderItems } from "./items.js";
 import { PRIVATE_HEADERS } from "./page.js";
 import { PhotoError, Pictures, parseCandidate, photoQuery } from "./pictures.js";
@@ -109,6 +110,39 @@ export function createApp(store: Store, token: string, pictures: Pictures = new 
       if (!Number.isInteger(id)) throw new TutorError("bad item id");
       if (!Number.isInteger(grade) || grade < 0 || grade > 5) throw new TutorError("grade must be an integer 0..5");
       res.json(await store.recordAttempt({ item_id: id, mode: "screen", answer: str(req.body.answer).slice(0, 500), grade, fillers: 0 }));
+    } catch (e) {
+      if (!(e instanceof TutorError)) console.error(e);
+      res.status(e instanceof TutorError ? 400 : 500).json({ error: e instanceof TutorError ? e.message : "could not save" });
+    }
+  });
+
+  app.get("/game/:token", auth, page(async (req) => renderGame(req.params.token as string, await store.gameItems())));
+
+  // A finished game round. Scores only; the game never schedules words.
+  app.post("/game/:token/score", auth, async (req, res) => {
+    res.set(PRIVATE_HEADERS);
+    try {
+      const n = (k: string, max: number) => {
+        const v = Number(req.body?.[k]);
+        if (!Number.isInteger(v) || v < 0 || v > max) throw new TutorError(`${k} must be an integer 0..${max}`);
+        return v;
+      };
+      const r = { score: n("score", 100_000), answered: n("answered", 1000), correct: n("correct", 1000), streak: n("streak", 1000) };
+      if (r.correct > r.answered || r.streak > r.correct) throw new TutorError("inconsistent round");
+      res.json(await store.saveGameRound(r));
+    } catch (e) {
+      if (!(e instanceof TutorError)) console.error(e);
+      res.status(e instanceof TutorError ? 400 : 500).json({ error: e instanceof TutorError ? e.message : "could not save" });
+    }
+  });
+
+  // "Drill these today": the words missed in a round, due today with their progress kept.
+  app.post("/game/:token/due", auth, async (req, res) => {
+    res.set(PRIVATE_HEADERS);
+    try {
+      const ids = req.body?.ids;
+      if (!Array.isArray(ids) || ids.length > 200 || !ids.every((i) => Number.isInteger(i))) throw new TutorError("ids must be a list of item ids");
+      res.json({ count: await store.bringForward(ids) });
     } catch (e) {
       if (!(e instanceof TutorError)) console.error(e);
       res.status(e instanceof TutorError ? 400 : 500).json({ error: e instanceof TutorError ? e.message : "could not save" });

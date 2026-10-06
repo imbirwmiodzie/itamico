@@ -31,9 +31,9 @@ nav a{color:var(--ink2);text-decoration:none;padding-bottom:2px}
 nav a[aria-current]{color:var(--ink);font-weight:600;border-bottom:2px solid var(--s1)}
 `;
 
-export function nav(token: string, active: "drill" | "stats" | "items" | "poster"): string {
+export function nav(token: string, active: "drill" | "game" | "stats" | "items" | "poster"): string {
   const t = encodeURIComponent(token);
   const link = (key: string, href: string, label: string) =>
     `<a href="${href}"${key === active ? ' aria-current="page"' : ""}>${label}</a>`;
-  return `<nav>${link("drill", `/drill/${t}`, "Drill")}${link("stats", `/stats/${t}`, "Progress")}${link("items", `/items/${t}`, "Words")}${link("poster", `/poster/${t}`, "Poster")}</nav>`;
+  return `<nav>${link("drill", `/drill/${t}`, "Drill")}${link("game", `/game/${t}`, "Game")}${link("stats", `/stats/${t}`, "Progress")}${link("items", `/items/${t}`, "Words")}${link("poster", `/poster/${t}`, "Poster")}</nav>`;
 }

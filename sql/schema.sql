@@ -65,6 +65,17 @@ create table if not exists pictures (
   fetched_at timestamptz not null default now()
 );
 
+-- One finished round of the Lampo game (/game/<token>). Kept apart from
+-- attempts: picking from four answers is not recall, so it never schedules.
+create table if not exists game_rounds (
+  id          bigserial primary key,
+  score       int not null check (score >= 0),
+  answered    int not null check (answered >= 0),
+  correct     int not null check (correct between 0 and answered),
+  best_streak int not null check (best_streak between 0 and correct),
+  at          timestamptz not null default now()
+);
+
 -- Full-text search for the Words page; must match ITEM_DOC_SQL in src/store.ts.
 create index if not exists items_fts_idx on items using gin (
   to_tsvector('simple', translate(lower(italian || ' ' || english || ' ' || coalesce(note, '') || ' ' || coalesce(context, '')),

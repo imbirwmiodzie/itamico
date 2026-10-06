@@ -452,6 +452,40 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.equal((await db.query("select 1 from pictures where item_id = $1", [id])).rowCount, 0);
   });
 
+  test("game page: words, scores and missed words to today's drill", async () => {
+    assert.equal((await fetch(`${base}/game/wrong-token`)).status, 404);
+    const res = await fetch(`${base}/game/${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const html = await res.text();
+    assert.match(html, /Lampo/);
+    assert.match(html, /aria-current="page">Game</);
+
+    const post = (path: string, body: unknown) =>
+      fetch(`${base}/game/${TOKEN}/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    await db.query("delete from game_rounds");
+    const first = await (await post("score", { score: 120, answered: 14, correct: 11, streak: 6 })).json();
+    assert.deepEqual(first, { best: 120, previous: null, plays: 1, record: true });
+    const second = await (await post("score", { score: 90, answered: 12, correct: 9, streak: 4 })).json();
+    assert.equal(second.record, false);
+    assert.equal(second.best, 120);
+    assert.equal((await post("score", { score: 10, answered: 1, correct: 2, streak: 0 })).status, 400, "more right than answered");
+    assert.equal((await post("score", { score: -1, answered: 0, correct: 0, streak: 0 })).status, 400);
+    const store = new Store(db, TZ);
+    assert.equal((await store.gameItems()).best, 120);
+
+    const { rows } = await db.query(
+      `insert into items (italian, english, source, interval_days, repetitions, due_on)
+       values ('il ventaglio', 'the fan', 'asked', 12, 3, current_date + 9) returning id::int as id`,
+    );
+    const id = rows[0].id;
+    assert.deepEqual(await (await post("due", { ids: [id] })).json(), { count: 1 });
+    const after = await db.query("select due_on, interval_days, repetitions from items where id = $1", [id]);
+    assert.equal(after.rows[0].due_on, today(TZ), "due today");
+    assert.equal(after.rows[0].repetitions, 3, "learning progress kept");
+    assert.equal((await post("due", { ids: "x" })).status, 400);
+  });
+
   test("drill word list: bearer only, due first, short items only, no grading", async () => {
     const store = new Store(db, TZ);
     await store.captureItem({ italian: "il semaforo", english: "the traffic light", source: "asked" });
