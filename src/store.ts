@@ -4,6 +4,7 @@
 import type pg from "pg";
 import type { Db } from "./db.js";
 import { today } from "./db.js";
+import { loadAtlas } from "./atlas.js";
 import { caseForTutor, caseSummary, loadCaseBoard, openCase, saveEpisode } from "./case.js";
 import { capGrade, countFillers, sm2 } from "./grading.js";
 import type { Candidate, Photo } from "./pictures.js";
@@ -590,6 +591,10 @@ export class Store {
 
   stats() {
     return loadStats(this.db, this.timeZone);
+  }
+
+  atlas() {
+    return loadAtlas(this.db, this.timeZone);
   }
 
   widget(limit?: number) {

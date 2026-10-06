@@ -93,6 +93,23 @@ The tutor drives it with three tools: `get_case` (the open case, what changed si
 
 Picking from four is recognition, much easier than recalling a word, so the game never changes when words are due on its own.
 
+## Word atlas
+
+`https://<host>/atlas/<MCP_TOKEN>` draws the whole dictionary, every word you've captured, in four views (**Atlas** in the nav). The poster and the stats page show only the hardest words or your practice; this page shows the words themselves. It works on phones and desktops in light and dark mode. Hover or tap any word for its English, its next review and how often you've forgotten it.
+
+All four views use the same growth stages, set by a word's review interval: **seme** (seed: not recalled yet, or just forgotten), **germoglio** (sprout: 1 day), **piantina** (seedling: 2–6 days), **bocciolo** (bud: 1–3 weeks), **fiore** (flower: 3 weeks to 3 months) and **ulivo** (olive tree: 3 months or more).
+
+- **Cielo (sky):** every word is a star on a night-sky map. The distance from the sun is the review interval on a log scale, with orbits marked at 1 day, 1 week, 1 month and 3 months. New and just-forgotten words burn close to the sun; words you keep for months drift outward. A star's colour is its stage, its size is how often it's been answered, and it twinkles when it's due. Words that share a note (*feminine*, *verb -are*…) are grouped into named constellations joined by lines. Under the map, **Closest to the sun** lists the eight words nearest the sun. On a phone the star names are hidden because they'd be too small to read; tap a star instead.
+- **Giardino (garden):** every word is a plant drawn for its stage, from a seed in the soil to an olive tree, in beds from trees down to seeds. Each flower keeps its own colour. A plant 3 or more days overdue droops, turns brown and says *needs water*, with a link to the drill.
+- **Nuvola (cloud):** all the words at once. Size shows how often a word is forgotten (lapses, plus lost ease), or how often it's been answered, and colour shows its stage, warm for new and cool for well kept. **Show in English** switches the whole cloud to the meanings.
+- **Errori (mistakes):** what you actually said, set against the right word, letter by letter: the letters you said instead are struck out in red, and the ones you left out are in green (*~~la~~**il** problema*). Each wrong answer gets a label: *accento* (accent or capital only), *articolo* (the article), *desinenza* (the ending), *lettere* (a letter or two) or *altra parola* (a different word). A bar at the top shows which kind of slip you make most. Whole-sentence answers are quoted rather than diffed. Answers that match the word (graded low only for hesitation or a hint) aren't counted.
+
+### Screensaver
+
+`https://<host>/ambient/<MCP_TOKEN>` (**Screensaver** on the atlas page) is a full-screen slideshow for an idle screen, an old tablet or a TV. One word at a time fades in, large, over its photo, which drifts slowly. Without a photo, the word gets a soft colour glow. After a pause the English, the note and the context sentence appear, with the word in bold. A clock sits in the corner. It shows the words that haven't stuck yet (interval under three weeks, or due), due ones first, then the most forgotten, in a slightly different order on each visit.
+
+Click or press Space to show the answer, then again for the next word. **F** toggles full screen and **Esc** goes back to the atlas. Where the browser allows it, the page keeps the screen from sleeping. Options in the URL: `every` (seconds per word, default 20), `reveal` (seconds before the answer, default a third of `every`), `n` (how many words, default 30) and `side=english` to show the English first as a recall test, e.g. `/ambient/<MCP_TOKEN>?every=30&side=english`.
+
 ## Poster page
 
 `https://<host>/poster/<MCP_TOKEN>` turns the words you forget most into something to print and put up at home. It's linked from the nav and from **Hardest words** on the stats page.
@@ -346,6 +363,7 @@ src/case.ts      Il Caso: case state for the tutor's tools, and the case board (
 src/stats.ts     the stats page (/stats/<token>)
 src/items.ts     the Words page (/items/<token>)
 src/poster.ts    the printable poster (/poster/<token>)
+src/atlas.ts     the word atlas (/atlas/<token>) and the screensaver (/ambient/<token>)
 src/pictures.ts  photo search and download (Pexels, Wikimedia Commons)
 src/widget.ts    desktop widget page and its data
 desktop/macos/   Hammerspoon script that pins the widget on screen

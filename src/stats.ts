@@ -5,7 +5,7 @@
 import type { Db } from "./db.js";
 import { today } from "./db.js";
 import { CASE_CARD_CSS, type CaseFile, caseCard } from "./case.js";
-import { esc, nav, PAGE_CSS } from "./page.js";
+import { esc, nav, PAGE_CSS, TIP_CSS, TIP_HTML } from "./page.js";
 
 export interface Stats {
   today: string;
@@ -552,8 +552,7 @@ details{margin-top:8px;font-size:13px}summary{cursor:pointer;color:var(--ink2)}
 ${CASE_CARD_CSS}
 .narrow{display:none}
 @media (max-width:600px){.wide{display:none}.narrow{display:block}.sm-hide{display:none}}
-#tip{position:fixed;pointer-events:none;background:var(--surface);color:var(--ink);border:1px solid var(--ring);border-radius:8px;padding:6px 10px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.12);display:none;z-index:9}
-#tip b{display:block;font-size:13px}
+${TIP_CSS}
 </style></head><body><main>
 ${nav(token, "stats")}
 <h1>Italian progress</h1>
@@ -623,28 +622,6 @@ ${s.hardest.length ? `<div class="scroll">${table(["Italian", "English", "Fails"
 ${s.recent.length ? `<div class="scroll">${table(["Italian", "English", "Note", "Context", "Source", "Captured"], s.recent.map((r) => [r.italian, r.english, r.note ?? "", r.context ?? "", r.source, r.captured]), "words", [2, 4, 5])}</div>` : ""}
 </section>
 </main>
-<div id="tip" role="status"></div>
-<script>
-(() => {
-  const tip = document.getElementById("tip");
-  const show = (el, x, y) => {
-    const [head, ...rest] = el.dataset.tip.split("|");
-    tip.replaceChildren();
-    const b = document.createElement("b"); b.textContent = rest.length ? rest[0] : head; tip.append(b);
-    for (const line of rest.length ? [head, ...rest.slice(1)] : []) { const d = document.createElement("div"); d.textContent = line; tip.append(d); }
-    tip.style.display = "block";
-    const r = tip.getBoundingClientRect();
-    tip.style.left = Math.min(window.innerWidth - r.width - 8, Math.max(8, x + 12)) + "px";
-    tip.style.top = Math.max(8, y - r.height - 12) + "px";
-  };
-  const hide = () => { tip.style.display = "none"; };
-  document.querySelectorAll("[data-tip]").forEach((el) => {
-    el.addEventListener("pointermove", (e) => show(el, e.clientX, e.clientY));
-    el.addEventListener("pointerleave", hide);
-    el.addEventListener("focus", () => { const r = el.getBoundingClientRect(); show(el, r.left + r.width / 2, r.top); });
-    el.addEventListener("blur", hide);
-  });
-})();
-</script>
+${TIP_HTML}
 </body></html>`;
 }
