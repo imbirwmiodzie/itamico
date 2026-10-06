@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { ambientOptions, ambientWords, atlasView, renderAmbient, renderAtlas } from "./atlas.js";
 import { renderCase } from "./case.js";
 import { renderDrill } from "./drill.js";
 import { renderGame } from "./game.js";
@@ -227,6 +228,17 @@ export function createApp(store: Store, token: string, pictures: Pictures = new 
       return renderStats(stats, req.params.token as string, board.open);
     }),
   );
+
+  // The word atlas (sky, garden, cloud, mistakes) and its full-screen screensaver.
+  app.get(
+    "/atlas/:token",
+    auth,
+    page(async (req) => renderAtlas(await store.atlas(), req.params.token as string, atlasView(req.query.view), req.query.by === "practice" ? "practice" : "trouble")),
+  );
+  app.get("/ambient/:token", auth, page(async (req) => {
+    const o = ambientOptions(req.query);
+    return renderAmbient(ambientWords((await store.atlas()).words, o.n), req.params.token as string, o);
+  }));
 
   app.get("/case/:token", auth, page(async (req) => renderCase(await store.caseBoard(), req.params.token as string)));
 

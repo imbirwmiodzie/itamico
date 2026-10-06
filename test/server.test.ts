@@ -407,6 +407,32 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.match(html, /class="sheet cards"/);
   });
 
+  test("atlas and screensaver: every view of the words, wrong answers diffed, token-guarded", async () => {
+    assert.equal((await fetch(`${base}/atlas/wrong-token`)).status, 404);
+    assert.equal((await fetch(`${base}/ambient/wrong-token`)).status, 404);
+    const store = new Store(db, TZ);
+    const id = (await store.captureItem({ italian: "la pellicola", english: "the film", note: "feminine", source: "asked" })).item.id;
+    await store.recordAttempt({ item_id: id, mode: "screen", answer: "la pelicola", grade: 1, fillers: 0 });
+    await store.recordAttempt({ item_id: id, mode: "screen", answer: "La pellicola", grade: 2, fillers: 0 });
+
+    const a = await store.atlas();
+    const w = a.words.find((x) => x.id === id)!;
+    assert.deepEqual([w.attempts, w.lapses, w.reps, w.due], [2, 2, 0, false]);
+    const m = a.mistakes.find((x) => x.id === id)!;
+    assert.deepEqual(m.wrong.map((x) => x.answer), ["la pelicola"], "an answer that is the word itself is not a mistake");
+
+    for (const view of ["sky", "garden", "cloud", "mistakes"]) {
+      const res = await fetch(`${base}/atlas/${TOKEN}?view=${view}`);
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get("cache-control"), "no-store");
+      assert.match(await res.text(), /la pel/);
+    }
+    assert.match(await (await fetch(`${base}/atlas/${TOKEN}?view=mistakes`)).text(), /<ins>l<\/ins>/);
+    const amb = await fetch(`${base}/ambient/${TOKEN}?every=30`);
+    assert.equal(amb.status, 200);
+    assert.match(await amb.text(), /"every":30/);
+  });
+
   test("photos: search and choose on the Words page, fill the poster, serve, remove", async () => {
     const store = new Store(db, TZ);
     const id = (await store.searchItems("difficilissimo")).items[0].id;
@@ -526,10 +552,11 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.equal((await call("start_session", {})).case, null);
     const ins = await db.query(
       `insert into items (italian, english, source, repetitions, interval_days, due_on) values
-         ('il cofano', 'the car bonnet', 'fallback', 2, 6, current_date - 1),
-         ('la targa', 'the number plate', 'asked', 0, 0, current_date - 1),
-         ('il ventaglio rosso', 'the red fan', 'asked', 1, 1, current_date + 1)
+         ('il cofano', 'the car bonnet', 'fallback', 2, 6, $1::date - 1),
+         ('la targa', 'the number plate', 'asked', 0, 0, $1::date - 1),
+         ('il ventaglio rosso', 'the red fan', 'asked', 1, 1, $1::date + 1)
        returning id::int as id`,
+      [today(TZ)], // the tutor's day, not the database's: they differ around midnight
     );
     const [tailgate, wrap, fan] = ins.rows.map((r) => r.id as number);
 
