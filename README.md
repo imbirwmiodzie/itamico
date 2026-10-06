@@ -123,6 +123,7 @@ These are things the requirements left open, or places where a small change made
 - **Case-insensitive uniqueness.** `items.italian` is unique on `lower(italian)`, so "Lo schermo" and "lo schermo" are one item. Captured text is tidied first: whitespace is collapsed, and wrapping quotes and trailing punctuation are dropped. Apostrophes are kept, so `un po'` survives.
 - **Re-capture.** Capturing an existing item updates its gloss and note, and resets it to due today with repetitions cleared. Its ease is kept. The **original context sentence is kept**, because the first context is the memorable one.
 - **`items.last_captured_at`.** This column was added to the schema. It is set on every capture or re-capture, and it is how `end_session` knows what was captured during the session.
+- **Due items carry no context.** `get_due_items` returns the prompt (`english`), the answer (`italian`) and the grammar note under `after_answer`, but never the context sentence. The context usually contains the answer, and the tutor kept weaving it into the question. It stays on the stats and Words pages.
 - **Word mode filters by length.** `get_due_items` in word mode returns only items of 4 words or fewer: something you can say in one breath while riding. Longer corrections wait for sentence mode, and `held_for_sentence_mode` tells the tutor how many are waiting.
 - **The server guards the hesitation rows.**
   - `record_attempt` counts filler tokens (eh, ehm, uh, um, mmm, hmm) in `answer` and uses whichever is larger: its own count or the model's.
