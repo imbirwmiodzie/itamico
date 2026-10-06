@@ -17,7 +17,7 @@ It is a remote MCP server over Streamable HTTP, written in TypeScript, backed by
 
 | Tool | Input | Returns |
 |---|---|---|
-| `start_session` | `limit_min?` | `session_id`, `due_count`, `due_word_mode`, `minutes_left` |
+| `start_session` | `limit_min?` | `session_id`, `due_count`, `due_word_mode`, `minutes_left`, `conversation_words` |
 | `capture_item` | `italian`, `english`, `note?`, `context?`, `source` | the item and `captured` or `recaptured` |
 | `get_due_items` | `mode`, `limit?` (10) | due items by `due_on`, then lowest ease |
 | `record_attempt` | `item_id`, `session_id?`, `mode`, `prompt?`, `answer`, `grade`, `fillers` | applied `grade`, `interval_days`, `due_on` |
@@ -135,6 +135,7 @@ These are things the requirements left open, or places where a small change made
   - `start_session` closes any session still open.
   - The clock ignores sessions older than 12 hours.
   - `minutes_left` is rounded **up**, so it reads 0 only once time has actually run out.
+- **Conversation words.** `start_session` returns up to 8 `conversation_words`: words captured or practised in the last 21 days that are not yet mature (interval under 21 days), picked at random from the 30 most recently captured. The tutor builds each free-conversation question so that answering it needs one of them, a different word and a different kind of question each time. The random pick keeps one session's questions from repeating the last one's.
 - **Dates use the user's time zone.** "Due today" is computed in `TUTOR_TZ` (default `Europe/Warsaw`), not in the server's or the database's zone.
 - **Small responses.** Responses are compact JSON with null fields dropped, because tokens are latency in a voice loop.
 - **Errors don't stop the conversation.** Errors come back as MCP tool errors with a short message, never as transport failures, so the conversation carries on.

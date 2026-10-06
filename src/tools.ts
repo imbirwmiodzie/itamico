@@ -8,7 +8,7 @@ import { z } from "zod";
 import { Store, TutorError, WORD_MODE_MAX_WORDS } from "./store.js";
 
 const INSTRUCTIONS = `Italian voice tutor backend. The user is riding a bicycle or driving and only talks.
-Call start_session first (together with get_due_items). Speak first, save after: in a turn that calls capture_item or record_attempt, say your reply first and put the tool calls at the end of the turn, then end the turn: no more text and no other tool calls (never placeholder calls such as code execution). Call capture_item silently whenever the user asks what an Italian word means or how to say something, falls back to English or Polish, or needs the correct form supplied. Drill due items (get_due_items) before free conversation and grade each answer with record_attempt. Never reuse prompt sentences; invent new ones each time. Every response includes minutes_left for a timed session; when time_up is true, finish the current item and call end_session.`;
+Call start_session first (together with get_due_items). Speak first, save after: in a turn that calls capture_item or record_attempt, say your reply first and put the tool calls at the end of the turn, then end the turn: no more text and no other tool calls (never placeholder calls such as code execution). Call capture_item silently whenever the user asks what an Italian word means or how to say something, falls back to English or Polish, or needs the correct form supplied. Drill due items (get_due_items) before free conversation and grade each answer with record_attempt. Never reuse prompt sentences; invent new ones each time. In free conversation, build every question around one of the conversation_words from start_session, so that answering naturally needs that word (don't say the word yourself); use a different word and a different kind of question each turn, and never ask the same question twice. Every response includes minutes_left for a timed session; when time_up is true, finish the current item and call end_session.`;
 
 const GRADE_TABLE = `SM-2 quality: 5 = correct, fluent, no fillers; 4 = correct with 1-2 fillers or a self-correction; 3 = correct with 3+ fillers; 2 = correct only after a hint; 1 = wrong word or form; 0 = English/Polish fallback or no answer.`;
 
@@ -43,7 +43,7 @@ export function buildServer(store: Store): McpServer {
     {
       title: "Start session",
       description:
-        "Call first, before saying anything substantive. Opens a session (closing any previous one) and starts the server-side timer. Pass limit_min when the user asks for a time limit (e.g. 10). Returns session_id, due_count (all due items), due_word_mode (due items short enough for word mode) and minutes_left.",
+        "Call first, before saying anything substantive. Opens a session (closing any previous one) and starts the server-side timer. Pass limit_min when the user asks for a time limit (e.g. 10). Returns session_id, due_count (all due items), due_word_mode (due items short enough for word mode), minutes_left and conversation_words: recently learned words (a different random pick each session) to steer free conversation towards. In free conversation, ask questions whose natural answer needs one of these words, without saying the word yourself; a different word and a different kind of question each time.",
       inputSchema: {
         limit_min: z.number().int().min(1).max(240).optional().describe("Session length in minutes; omit for no limit"),
       },
