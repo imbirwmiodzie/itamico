@@ -5,6 +5,7 @@ import type pg from "pg";
 import type { Db } from "./db.js";
 import { today } from "./db.js";
 import { capGrade, countFillers, sm2 } from "./grading.js";
+import type { Candidate, Photo } from "./pictures.js";
 import { loadStats } from "./stats.js";
 
 export type Mode = "word" | "sentence";
@@ -40,6 +41,9 @@ export const WORD_MODE_MAX_WORDS = 4;
 /** An open session older than this is treated as abandoned (the app was just closed). */
 const STALE_SESSION = "12 hours";
 
+/** Photo columns from `left join pictures p`: `pic` is a version for the image URL, null without a photo. */
+const PIC_SQL = `floor(extract(epoch from p.fetched_at))::float8 as pic, p.source as pic_source, p.author as pic_author, p.license as pic_license`;
+
 const WORD_COUNT_SQL = `array_length(regexp_split_to_array(btrim(italian), '\\s+'), 1)`;
 
 export interface Clock {
@@ -62,6 +66,10 @@ export interface ForgettableWord {
   /** Grades 0..5, oldest first. */
   grades: number[];
   score: number;
+  pic: number | null;
+  pic_source: string | null;
+  pic_author: string | null;
+  pic_license: string | null;
 }
 
 export class TutorError extends Error {}
@@ -242,10 +250,11 @@ export class Store {
   async drillItems(limit = 200) {
     const day = this.today();
     const { rows } = await this.db.query(
-      `select id::int as id, italian, english, note, context, ease, interval_days, repetitions,
-              ($1::date - due_on) as overdue, count(*) over ()::int as total
-         from items where due_on <= $1
-        order by due_on, ease, id
+      `select i.id::int as id, i.italian, i.english, i.note, i.context, i.ease, i.interval_days, i.repetitions,
+              ($1::date - i.due_on) as overdue, count(*) over ()::int as total, ${PIC_SQL}
+         from items i left join pictures p on p.item_id = i.id
+        where i.due_on <= $1
+        order by i.due_on, i.ease, i.id
         limit $2`,
       [day, limit],
     );
@@ -263,6 +272,7 @@ export class Store {
       new: r.repetitions === 0,
       overdue: r.overdue as number,
       preview: [0, 1, 2, 3, 4, 5].map((q) => sm2(r, q).interval_days),
+      pic: r.pic as number | null,
     }));
     return {
       today: day,
@@ -377,8 +387,8 @@ export class Store {
               (select coalesce(json_agg(h), '[]'::json) from (
                  select to_char(a.at at time zone $2, 'YYYY-MM-DD HH24:MI') as at, a.mode, a.prompt, a.answer, a.grade, a.fillers
                    from attempts a where a.item_id = i.id order by a.at desc limit 10) h) as history,
-              count(*) over ()::int as total
-         from items i
+              count(*) over ()::int as total, ${PIC_SQL}
+         from items i left join pictures p on p.item_id = i.id
         ${where.length ? `where ${where.join(" and ")}` : ""}
         order by ${order}
         limit $${params.length}`,
@@ -438,9 +448,10 @@ export class Store {
               (array_agg(a.grade order by a.at desc))[1:12] as grades,
               round((count(a.id) filter (where a.grade < 3)
                 + 2 * coalesce(sum(power(0.5, extract(epoch from now() - a.at)::float / 86400 / 30)) filter (where a.grade < 3), 0)
-                + 2 * greatest(0, 2.5 - i.ease))::numeric, 2)::float as score
-         from items i join attempts a on a.item_id = i.id
-        group by i.id
+                + 2 * greatest(0, 2.5 - i.ease))::numeric, 2)::float as score,
+              ${PIC_SQL}
+         from items i join attempts a on a.item_id = i.id left join pictures p on p.item_id = i.id
+        group by i.id, p.item_id
        having count(a.id) filter (where a.grade < 3) > 0 or i.ease < 2.5
         order by score desc, i.ease, lower(i.italian)
         limit $1`,
@@ -450,6 +461,31 @@ export class Store {
       today: this.today(),
       words: rows.map((r) => ({ ...r, grades: (r.grades as number[]).reverse() })) as ForgettableWord[],
     };
+  }
+
+  /** Store (or replace) the photo for an item. */
+  async savePicture(itemId: number, c: Candidate, photo: Photo, query: string) {
+    try {
+      await this.db.query(
+        `insert into pictures (item_id, mime, data, source, page_url, author, license, query)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)
+         on conflict (item_id) do update set mime = excluded.mime, data = excluded.data, source = excluded.source,
+           page_url = excluded.page_url, author = excluded.author, license = excluded.license, query = excluded.query, fetched_at = now()`,
+        [itemId, photo.mime, photo.data, c.source, c.page || null, c.author, c.license, query || null],
+      );
+    } catch (e) {
+      if ((e as { code?: string }).code === "23503") throw new TutorError(`item ${itemId} not found`);
+      throw e;
+    }
+  }
+
+  async deletePicture(itemId: number) {
+    await this.db.query(`delete from pictures where item_id = $1`, [itemId]);
+  }
+
+  async picture(itemId: number): Promise<Photo | null> {
+    const { rows } = await this.db.query(`select mime, data from pictures where item_id = $1`, [itemId]);
+    return (rows[0] as Photo | undefined) ?? null;
   }
 
   stats() {

@@ -71,6 +71,7 @@ ${nav(token, "drill")}
   <form id="typeform" class="typed" hidden><input id="typed" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" lang="it" placeholder="Scrivi in italiano…" aria-label="Your answer in Italian" maxlength="200"></form>
   <button type="button" id="show" class="show">Show answer <kbd>Space</kbd></button>
   <div id="ans" class="ans" hidden>
+    <img id="pic" class="pic" alt="" hidden>
     <div class="a" id="a" lang="it"></div>
     <div id="cmp" class="cmp" hidden></div>
     <div id="note" class="note" hidden></div>
@@ -113,7 +114,7 @@ ${nav(token, "drill")}
 </section>
 </main>
 <div id="toast" role="alert" hidden></div>
-<script type="application/json" id="data">${scriptJson({ post: `${base}/grade`, due: d.due, items: d.items })}</script>
+<script type="application/json" id="data">${scriptJson({ post: `${base}/grade`, pics: `/pic/${t}/`, due: d.due, items: d.items })}</script>
 <script>${CLIENT_JS}</script>
 </body></html>`;
 }
@@ -164,6 +165,8 @@ box-shadow:0 1px 2px rgba(0,0,0,.04),0 18px 40px -18px var(--shadow);min-height:
 .show:hover{opacity:.9}.show:active{transform:scale(.99)}
 .ans{animation:rise .3s cubic-bezier(.2,.8,.2,1)}
 @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.pic{display:block;width:100%;max-height:220px;object-fit:cover;border-radius:14px;margin-top:4px;background:var(--grid)}
+.pic:not([hidden])+.a{border-top:0;padding-top:12px}
 .a{font-family:ui-serif,"Iowan Old Style","Palatino Linotype",Georgia,serif;font-size:clamp(30px,6.4vw,42px);line-height:1.15;color:var(--ans);padding-top:18px;border-top:1px dashed var(--base)}
 .cmp{margin-top:10px;font-size:14px;padding:6px 10px;border-radius:8px;display:inline-block}
 .cmp.match{color:var(--g5);background:rgba(17,128,74,.10)}.cmp.accents{color:var(--g3);background:rgba(192,143,0,.12)}.cmp.wrong{color:var(--g1);background:rgba(208,59,59,.10)}
@@ -280,6 +283,11 @@ const CLIENT_JS = String.raw`
     card.hidden = false;
     $("q").textContent = item.english;
     $("a").textContent = item.italian;
+    // Loaded now, shown with the answer: a picture of the word would give it away.
+    const pic = $("pic");
+    pic.hidden = !item.pic;
+    if (item.pic) pic.src = D.pics + item.id + "?v=" + item.pic;
+    else pic.removeAttribute("src");
     const badges = $("badges");
     badges.replaceChildren();
     if (phase === "final") badges.append(el("span", "badge final", "final drill"));

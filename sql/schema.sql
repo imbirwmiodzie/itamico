@@ -51,6 +51,20 @@ end $$;
 create index if not exists attempts_session_idx on attempts (session_id);
 create index if not exists attempts_item_idx on attempts (item_id);
 
+-- One photo per word, downloaded from Pexels or Wikimedia Commons and kept here
+-- so posters print without depending on the other site.
+create table if not exists pictures (
+  item_id    bigint primary key references items(id) on delete cascade,
+  mime       text not null,
+  data       bytea not null,
+  source     text not null,                 -- 'pexels' | 'wikimedia'
+  page_url   text,                          -- the photo's page, for the credit
+  author     text,
+  license    text,
+  query      text,                          -- what was searched for
+  fetched_at timestamptz not null default now()
+);
+
 -- Full-text search for the Words page; must match ITEM_DOC_SQL in src/store.ts.
 create index if not exists items_fts_idx on items using gin (
   to_tsvector('simple', translate(lower(italian || ' ' || english || ' ' || coalesce(note, '') || ' ' || coalesce(context, '')),
