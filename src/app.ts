@@ -6,6 +6,7 @@ import { PRIVATE_HEADERS } from "./page.js";
 import { type ItemFilter, SOURCES, type Store, TutorError } from "./store.js";
 import { renderStats } from "./stats.js";
 import { buildServer } from "./tools.js";
+import { renderWidget, widgetOptions } from "./widget.js";
 
 /**
  * HTTP app exposing the MCP endpoint over Streamable HTTP, stateless: every
@@ -83,6 +84,20 @@ export function createApp(store: Store, token: string) {
     (["all", "due", "nocontext", "failed"] as const).find((f) => f === v) ?? "all";
 
   app.get("/stats/:token", auth, page(async (req) => renderStats(await store.stats(), req.params.token as string)));
+
+  // Desktop widget: the page, and the data it re-fetches every 10 minutes.
+  app.get("/widget/:token", auth, page(async (req) => {
+    const o = widgetOptions(req.query);
+    return renderWidget(await store.widget(o.n), req.params.token as string, o);
+  }));
+  app.get("/widget/:token/data", auth, async (req, res) => {
+    try {
+      res.set(PRIVATE_HEADERS).json(await store.widget(widgetOptions(req.query).n));
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "internal error" });
+    }
+  });
 
   app.get(
     "/items/:token",

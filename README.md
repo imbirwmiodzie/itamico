@@ -74,6 +74,12 @@ It uses the same token as the connector URL. A wrong token returns 404. The page
 
 Like the stats page, it's guarded by the token and sent with `no-store`, `no-referrer` and `noindex`.
 
+## Desktop widget
+
+`https://<host>/widget/<MCP_TOKEN>` is a small card that shows the hardest words one at a time, so you see them during the day between rides. Each word shows first and its answer appears after a pause, with the context sentence and what you said the last time you got it wrong. The card fetches fresh words from `/widget/<MCP_TOKEN>/data` every 10 minutes.
+
+On macOS, `desktop/macos/itamico.lua` pins the card at a fixed spot on screen with [Hammerspoon](https://www.hammerspoon.org): in a corner or at exact coordinates, above all windows or on the desktop. Setup and options are in [`desktop/macos/README.md`](desktop/macos/README.md).
+
 ## Decisions beyond the brief
 
 These are things the requirements left open, or places where a small change made the voice loop more robust.
@@ -216,6 +222,8 @@ src/app.ts       Express app, auth, stateless Streamable HTTP endpoint
 src/tools.ts     MCP tool definitions (descriptions double as tutor guidance)
 src/store.ts     sessions/timer, capture, due items, attempts
 src/grading.ts   SM-2, filler counting, grade capping
+src/widget.ts    desktop widget page and its data
+desktop/macos/   Hammerspoon script that pins the widget on screen
 sql/schema.sql   schema
 tutor/project-instructions.md   Claude Project custom instructions
 ```

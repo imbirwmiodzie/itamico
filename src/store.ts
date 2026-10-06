@@ -6,6 +6,7 @@ import type { Db } from "./db.js";
 import { today } from "./db.js";
 import { capGrade, countFillers, sm2 } from "./grading.js";
 import { loadStats } from "./stats.js";
+import { loadWidget } from "./widget.js";
 
 export type Mode = "word" | "sentence";
 export type Source = "asked" | "fallback" | "error" | "topic_check";
@@ -370,6 +371,10 @@ export class Store {
 
   stats() {
     return loadStats(this.db, this.timeZone);
+  }
+
+  widget(limit?: number) {
+    return loadWidget(this.db, this.timeZone, limit);
   }
 
   // ----------------------------------------------------------------- helpers

@@ -278,6 +278,35 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.match(loc(res).get("err") ?? "", /unknown source/);
   });
 
+  test("widget: token-guarded, failed words first, data safe inside the page", async () => {
+    assert.equal((await fetch(`${base}/widget/wrong-token`)).status, 404);
+    assert.equal((await fetch(`${base}/widget/wrong-token/data`)).status, 404);
+
+    const res = await fetch(`${base}/widget/${TOKEN}/data?n=3`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const data = await res.json();
+    assert.equal(data.words.length, 3);
+    assert.equal(data.streak, 1);
+    assert.equal(data.words[0].italian, "su una pista ciclabile di città", "the failed word leads");
+    assert.equal(data.words[0].fails, 1);
+    assert.equal(data.words[0].last_wrong, "in una pista ciclabile");
+
+    // Mature words drop out of the rotation unless due.
+    await db.query("update items set interval_days = 30, due_on = current_date + 30 where italian = 'tragitto'");
+    const all = await (await fetch(`${base}/widget/${TOKEN}/data?n=50`)).json();
+    assert.ok(!all.words.some((w: { italian: string }) => w.italian === "tragitto"));
+
+    const page = await fetch(`${base}/widget/${TOKEN}?every=5&n=99`);
+    assert.equal(page.headers.get("referrer-policy"), "no-referrer");
+    const html = await page.text();
+    assert.match(html, /EVERY = 10000/, "every is clamped to 10 s");
+    assert.match(html, /data\?n=50/, "n is clamped to 50");
+    // la pellicola's context holds a <script> tag; inside the JSON block it must stay inert.
+    assert.ok(html.includes("\\u003cscript>alert(1)\\u003c/script>"));
+    assert.ok(!html.includes("<script>alert(1)"));
+  });
+
   test("errors come back as tool errors, not crashes", async () => {
     const r = await call("record_attempt", { item_id: 999999, mode: "word", answer: "x", grade: 5, fillers: 0 });
     assert.equal(r._isError, true);
