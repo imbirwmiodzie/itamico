@@ -68,6 +68,17 @@ export function createApp(store: Store, token: string) {
   app.all("/mcp", auth, handle);
   app.all("/mcp/:token", auth, handle);
 
+  // Word list for the Android drill player (android/), Bearer token only.
+  app.get("/api/drill", auth, async (req, res) => {
+    try {
+      const limit = Math.min(Math.max(Math.trunc(Number(req.query.limit)) || 20, 1), 100);
+      res.set("Cache-Control", "no-store").json(await store.drillItems(limit));
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "internal error" });
+    }
+  });
+
   // Browser pages. Same token as the connector URL; the URL is the secret, so
   // keep it out of caches, referrers and search engines (PRIVATE_HEADERS).
   const page = (render: (req: Request) => Promise<string>) => async (req: Request, res: Response) => {

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Itamico Drill</string>
+    <string name="intro">Reads your words aloud: the prompt, a pause for you to answer out loud, then the answer. No grading. In the car, open it from Android Auto\'s media apps.</string>
+    <string name="url_label">Connector URL</string>
+    <string name="url_hint">https://your-host/mcp/TOKEN</string>
+    <string name="words_label">Words per drill</string>
+    <string name="pause_label">Pause to answer (seconds)</string>
+    <string name="order_label">Order</string>
+    <string name="order_en_it">English → pause → Italian</string>
+    <string name="order_it_en">Italian → pause → English</string>
+    <string name="order_it">Italian → pause (repeat after it)</string>
+    <string name="test">Test connection</string>
+    <string name="start">Start drill</string>
+    <string name="pause_resume">Pause / resume</string>
+    <string name="stop">Stop</string>
+    <string name="start_drill">Start drill</string>
+    <string name="ready_subtitle">Press play to start a drill</string>
+    <string name="loading">Loading words…</string>
+    <string name="done_title">Finito</string>
+    <string name="checking">Checking…</string>
+    <string name="connected">Connected: %1$d words, %2$d due today.</string>
+    <string name="playing">▶ %1$s  (%2$s)</string>
+    <string name="paused">⏸ %1$s  (%2$s)</string>
+    <string name="bad_url">Paste the connector URL, ending in /mcp/TOKEN.</string>
+    <string name="channel_name">Drill playback</string>
+</resources>

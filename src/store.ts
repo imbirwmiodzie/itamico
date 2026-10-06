@@ -218,6 +218,27 @@ export class Store {
     return result;
   }
 
+  /**
+   * Words for the listen-and-answer drill in the Android app, which reads them
+   * aloud without grading. Due items come first (by due date, then hardest),
+   * topped up with the ones due soonest; short items only, as in word mode.
+   * The pick is shuffled so repeated drills don't open with the same word.
+   */
+  async drillItems(limit = 20) {
+    const day = this.today();
+    const { rows } = await this.db.query(
+      `select * from (
+         select id::int as id, italian, english, (due_on <= $1) as due
+           from items
+          where ${WORD_COUNT_SQL} <= $2
+          order by due_on, ease, id
+          limit $3
+       ) pick order by random()`,
+      [day, WORD_MODE_MAX_WORDS, limit],
+    );
+    return { items: rows, due: rows.filter((r) => r.due).length };
+  }
+
   async recordAttempt(input: {
     item_id: number;
     session_id?: number;

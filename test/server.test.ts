@@ -278,6 +278,31 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.match(loc(res).get("err") ?? "", /unknown source/);
   });
 
+  test("drill word list: bearer only, due first, short items only, no grading", async () => {
+    const store = new Store(db, TZ);
+    await store.captureItem({ italian: "il semaforo", english: "the traffic light", source: "asked" });
+    await store.captureItem({ italian: "non me lo sarei mai aspettato davvero", english: "I'd never have expected it", source: "error" });
+    await db.query(`update items set due_on = current_date + 30 where italian = 'tragitto'`);
+    const get = (qs = "", auth = `Bearer ${TOKEN}`) => fetch(`${base}/api/drill${qs}`, { headers: { authorization: auth } });
+
+    assert.equal((await get("", "Bearer nope")).status, 401);
+    const res = await get("?limit=100");
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const { items, due } = (await res.json()) as { items: { italian: string; english: string; due: boolean }[]; due: number };
+    const names = items.map((i) => i.italian);
+    assert.ok(names.includes("il semaforo"));
+    assert.ok(names.includes("tragitto"), "not-due items top up the list");
+    assert.ok(!names.some((n) => n.split(" ").length > 4), "long items wait for sentence mode");
+    assert.equal(due, items.filter((i) => i.due).length);
+    assert.equal(items.find((i) => i.italian === "tragitto")?.due, false);
+
+    const one = (await (await get("?limit=1")).json()) as { items: { due: boolean }[] };
+    assert.equal(one.items.length, 1);
+    assert.equal(one.items[0].due, true, "due items are picked before others");
+    assert.equal((await db.query("select 1 from attempts a join items i on i.id = a.item_id where i.italian = 'il semaforo'")).rowCount, 0);
+  });
+
   test("errors come back as tool errors, not crashes", async () => {
     const r = await call("record_attempt", { item_id: 999999, mode: "word", answer: "x", grade: 5, fillers: 0 });
     assert.equal(r._isError, true);

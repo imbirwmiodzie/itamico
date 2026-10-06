@@ -190,6 +190,40 @@ The server is unchanged. Point the realtime session at the same endpoint:
 
 The server also sends a short version of the tutor rules as MCP `instructions` on initialize, for clients that surface them.
 
+## Android drill player (Android Auto)
+
+`android/` is a small Android app that drills your words without Claude. A synthesized voice reads each word: the prompt, a pause for you to answer out loud, then the answer. There is no grading, and nothing is written back to the server.
+
+- **Words:** the server picks them (`GET /api/drill`, below). Due words come first, then the ones due soonest, up to the number you set. Only short items (4 words or fewer, as in word mode) are used, and the pick is shuffled. The last list is kept on the phone, so a drill still starts without signal.
+- **Order:** English → pause → Italian (recall, the default), Italian → pause → English, or Italian → pause (listen and repeat).
+- **Pause:** 5 seconds by default, counted from the end of the prompt. A further 1.5 s follows the answer before the next word.
+- **In the car:** it is a media app, so it appears in Android Auto's media apps.
+  - Play/pause: pause or resume. Resuming repeats the current word from its prompt.
+  - Next: skip the word.
+  - Previous: hear the word again, or go back one if it has only just started.
+  - The screen shows the prompt and the position (e.g. 3 / 20), plus the answer once it has been said.
+  - A navigation prompt or a call pauses the drill, and it resumes afterwards.
+- **On the phone** (bike, headphones): the same controls are in the app and in the media notification. Disconnecting headphones or the car pauses it.
+- **Voices:** it uses the phone's text-to-speech engine (Google's, normally). Italian and English voices must be installed: **Settings → Text-to-speech output → Install voice data**. The speech rate is set there too.
+
+### Install
+
+1. **Get the APK.**
+   - **From CI:** every push builds it. Open the **ci** workflow run in GitHub Actions and download the `itamico-drill-apk` artifact.
+   - **Build it yourself:** run `cd android && ./gradlew assembleDebug` (needs the Android SDK). Or open `android/` in Android Studio and press Run.
+2. **Install it on the phone.** Open the APK file, or run `adb install -r app-debug.apk`.
+3. **Set it up.** Open **Itamico Drill**, paste the same connector URL as in Claude (`https://<host>/mcp/<MCP_TOKEN>`) and tap **Test connection**.
+4. **Make it visible in Android Auto.** Android Auto only lists apps from the Play Store until you allow others. Do this once on the phone:
+   1. Open Android Auto's settings and tap **Version** about 10 times to unlock developer mode.
+   2. In ⋮ → **Developer settings**, tick **Unknown sources**.
+   3. Re-check this setting after an Android Auto update.
+
+The debug key is checked in (`android/app/debug.keystore`, standard `android` passwords) so that CI and local builds install over each other. It is not a secret. Don't use it for anything you publish.
+
+### `GET /api/drill`
+
+`Authorization: Bearer <MCP_TOKEN>`, optional `?limit=` (1–100, default 20). It returns `{"items": [{"id", "italian", "english", "due"}], "due": <how many are due>}`.
+
 ## Caveats
 
 - **Fillers depend on the transcript.** Filler detection only sees what speech-to-text writes, and many recognisers drop "eh/ehm". If the transcripts come through clean, hesitation grading will be too generous. That is a property of the voice layer, not of this server. Realtime APIs with raw transcripts are better here.
@@ -218,4 +252,5 @@ src/store.ts     sessions/timer, capture, due items, attempts
 src/grading.ts   SM-2, filler counting, grade capping
 sql/schema.sql   schema
 tutor/project-instructions.md   Claude Project custom instructions
+android/         drill player app for the phone and Android Auto (Java, no dependencies)
 ```
