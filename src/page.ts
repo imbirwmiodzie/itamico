@@ -8,11 +8,14 @@ export const esc = (v: unknown) =>
 export const PRIVATE_HEADERS = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex" };
 
 export const PAGE_CSS = `:root{color-scheme:light;--page:#f9f9f7;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--base:#c3c2b7;--ring:rgba(11,11,11,.10);
---s1:#2a78d6;--s2:#eb6834;--st0:#86b6ef;--st1:#3987e5;--st2:#1c5cab;--st3:#0d366b;--good:#006300;--bad:#d03b3b}
+--s1:#2a78d6;--s2:#eb6834;--st0:#86b6ef;--st1:#3987e5;--st2:#1c5cab;--st3:#0d366b;--good:#006300;--bad:#d03b3b;
+--h0:var(--grid);--h1:#86b6ef;--h2:#5598e7;--h3:#256abf;--h4:#104281}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--page:#0d0d0d;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--grid:#2c2c2a;--base:#383835;--ring:rgba(255,255,255,.10);
---s1:#3987e5;--s2:#d95926;--st0:#184f95;--st1:#256abf;--st2:#5598e7;--st3:#9ec5f4;--good:#0ca30c;--bad:#e66767}}
+--s1:#3987e5;--s2:#d95926;--st0:#184f95;--st1:#256abf;--st2:#5598e7;--st3:#9ec5f4;--good:#0ca30c;--bad:#e66767;
+--h1:#184f95;--h2:#256abf;--h3:#5598e7;--h4:#9ec5f4}}
 :root[data-theme="dark"]{color-scheme:dark;--page:#0d0d0d;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--grid:#2c2c2a;--base:#383835;--ring:rgba(255,255,255,.10);
---s1:#3987e5;--s2:#d95926;--st0:#184f95;--st1:#256abf;--st2:#5598e7;--st3:#9ec5f4;--good:#0ca30c;--bad:#e66767}
+--s1:#3987e5;--s2:#d95926;--st0:#184f95;--st1:#256abf;--st2:#5598e7;--st3:#9ec5f4;--good:#0ca30c;--bad:#e66767;
+--h1:#184f95;--h2:#256abf;--h3:#5598e7;--h4:#9ec5f4}
 *{box-sizing:border-box}
 body{margin:0;background:var(--page);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
 main{max-width:880px;margin:0 auto;padding:20px 16px 48px}

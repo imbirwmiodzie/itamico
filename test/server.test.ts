@@ -217,6 +217,10 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.match(html, /Italian progress/);
     assert.match(html, /la pellicola/);
     assert.match(html, /Answers per day/);
+    for (const h of ["Practice calendar", "How answers were graded", "How well words stick", "When you practise", "Vocabulary growth"]) {
+      assert.match(html, new RegExp(h));
+    }
+    assert.ok(!/NaN|undefined|Infinity/.test(html));
     assert.ok(!html.includes("<script>alert(1)</script>"), "user text must be escaped");
     assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   });

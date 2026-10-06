@@ -50,9 +50,14 @@ The model assigns the quality from the transcript. The server applies SM-2:
 `https://<host>/stats/<MCP_TOKEN>` is a progress page for a browser, built for phones and desktops in light and dark mode. It shows:
 
 - **Headline numbers:** due today, practice streak, pass rate and fillers per answer over the last 7 days, and how many words are learned.
+- **Practice calendar:** a heatmap of answers per day over the last 26 weeks (15 on a phone).
 - **Answers per day** for the last 30 days, split into passed and failed.
 - **Hesitation trend:** average filler sounds per answer per day.
+- **How answers were graded:** answers per grade 0–5 over the last 30 days.
+- **How well words stick:** pass rate by days since the same word was last answered, a rough forgetting curve. Buckets with fewer than 5 answers are faded.
+- **When you practise:** a weekday × hour heatmap of the last 90 days, in `TUTOR_TZ`, with the busiest hour named.
 - **Where your words are:** how many are not yet recalled, learning, young or mature.
+- **Vocabulary growth:** words in the list at the end of each day, last 90 days.
 - **Coming up:** reviews due per day for the next two weeks.
 - **Hardest words** and **recently captured words**, with their context.
 
