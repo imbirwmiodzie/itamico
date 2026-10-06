@@ -489,6 +489,38 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.equal((await post("due", { ids: "x" })).status, 400);
   });
 
+  test("palazzo page: every word on the shelves, hardest first when capped, missed words to today's drill", async () => {
+    assert.equal((await fetch(`${base}/palazzo/wrong-token`)).status, 404);
+    const res = await fetch(`${base}/palazzo/${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const html = await res.text();
+    assert.match(html, /<title>Il Palazzo<\/title>/);
+    assert.match(html, /aria-current="page">Palazzo</);
+
+    const { rows } = await db.query(
+      `insert into items (italian, english, source, ease, interval_days, repetitions, due_on) values
+         ('lo sgabello', 'the stool', 'asked', 1.3, 30, 4, current_date + 20),
+         ('la mensola', 'the shelf', 'asked', 2.5, 2, 1, current_date - 1)
+       returning id::int as id`,
+    );
+    const store = new Store(db, TZ);
+    const all = await store.palazzoItems();
+    const stool = all.items.find((i) => i.id === rows[0].id)!;
+    assert.equal(all.total, all.items.length);
+    assert.deepEqual([stool.interval_days, stool.repetitions, stool.due], [30, 4, false]);
+    const two = await store.palazzoItems(2);
+    assert.equal(two.items.length, 2);
+    assert.ok(two.total > 2);
+    assert.ok(two.items.every((i) => i.due), "due words are kept first");
+
+    const due = await fetch(`${base}/palazzo/${TOKEN}/due`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [rows[0].id] }) });
+    assert.deepEqual(await due.json(), { count: 1 });
+    const after = await db.query("select due_on, interval_days from items where id = $1", [rows[0].id]);
+    assert.equal(after.rows[0].due_on, today(TZ));
+    assert.equal(after.rows[0].interval_days, 30, "learning progress kept");
+  });
+
   test("Il Caso: open a case, episodes follow memory, finale only when every clue is secured", async () => {
     await db.query("delete from cases");
     assert.equal((await call("start_session", {})).case, null);

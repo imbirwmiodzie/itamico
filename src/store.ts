@@ -77,6 +77,20 @@ export interface ForgettableWord {
   pic_license: string | null;
 }
 
+export interface PalazzoWord {
+  id: number;
+  italian: string;
+  english: string;
+  note: string | null;
+  context: string | null;
+  ease: number;
+  interval_days: number;
+  repetitions: number;
+  due: boolean;
+  lapses: number;
+  pic: number | null;
+}
+
 export class TutorError extends Error {}
 
 export class Store {
@@ -503,6 +517,27 @@ export class Store {
       items: rows as { id: number; italian: string; english: string; ease: number; due: boolean; lapses: number; pic: number | null }[],
       best: g.rows[0].best as number,
       plays: g.rows[0].plays as number,
+    };
+  }
+
+  /**
+   * Words for the Palazzo (/palazzo/<token>), with their learning stage. Past
+   * `limit`, the ones due and hardest are kept; `total` counts them all.
+   */
+  async palazzoItems(limit = 300) {
+    const { rows } = await this.db.query(
+      `select i.id::int as id, i.italian, i.english, i.note, i.context, i.ease, i.interval_days, i.repetitions,
+              (i.due_on <= $1) as due, count(*) over ()::int as total,
+              (select count(*)::int from attempts a where a.item_id = i.id and a.grade < 3) as lapses,
+              floor(extract(epoch from p.fetched_at))::float8 as pic
+         from items i left join pictures p on p.item_id = i.id
+        order by (i.due_on <= $1) desc, i.ease, i.id
+        limit $2`,
+      [this.today(), limit],
+    );
+    return {
+      items: rows.map(({ total: _, ...r }) => r) as PalazzoWord[],
+      total: (rows[0]?.total as number) ?? 0,
     };
   }
 

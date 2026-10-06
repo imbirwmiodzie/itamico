@@ -93,6 +93,20 @@ The tutor drives it with three tools: `get_case` (the open case, what changed si
 
 Picking from four is recognition, much easier than recalling a word, so the game never changes when words are due on its own.
 
+## Palazzo: a 3D memory palace
+
+`https://<host>/palazzo/<MCP_TOKEN>` is a building you walk through, first person, with your words in it. It works in a desktop browser and on a phone.
+
+- **The library:** every word is a book. The spines carry the Italian, reading from the bottom up as on Italian books. The books are shelved in alphabetical order of the noun, ignoring articles and accents (*la pellicola* stands under P), and each bookcase has a brass plate with its letters (*D – M*). So a word always stands in the same part of the room, the old memory-palace trick.
+- **Spine colours:** vellum for words not yet recalled, red for learning (under a week), green for young (1–3 weeks) and blue with extra gilt for mature (3+ weeks), as on the stats page. A tricolour ribbon marks a word due today. The other books on the shelves are plain and carry no words.
+- **The gallery:** behind the library, the hardest words that have a [photo](#photos) hang in gilt frames on red walls, up to 24, with the Italian on a plaque.
+- **Passeggiata** (walk): look at a book and its Italian appears; the meaning follows a moment later, so you can recall it first. Click or tap the book to open it: meaning, note, context sentence and stage, plus **Drill it today**.
+- **Caccia** (hunt): the page names 10 meanings in English, one at a time, weighted toward hard words as in Lampo. Find each one's book (or its painting) and click it. Since the shelves are alphabetical, the quick way is to recall the Italian and head for its letter. A wrong book costs 5 seconds and shows what that book means. **Aiuto** (help) costs 10 seconds: a column of light marks the book and the map shows where it is. **Salta** (skip) costs 15 seconds and tells you the word. The end screen shows your time, your best time on this device, and the words you needed help with; **Drill these today** puts them in today's drill. Like Lampo, the hunt never changes the schedule on its own.
+- **Controls:** W A S D or the arrow keys to walk, Shift to run, the mouse to look (click once to capture it; Esc releases it and opens the menu). On a phone, the left thumb walks with a joystick and the right thumb looks; tap a book to open it. M toggles the map.
+- **Size:** up to 300 words go on the shelves. With more, the ones due and hardest are kept. The library grows a pair of bookcases per 96 words.
+
+It is drawn with plain WebGL, with no library and nothing loaded from elsewhere. The lighting is baked into the geometry, the spines and plaques are drawn into canvas textures in the browser, and there's distance fog. Photos come from `/pic/<MCP_TOKEN>/<id>` like everywhere else. It's guarded by the same token and sent with the same private headers as the other pages.
+
 ## Poster page
 
 `https://<host>/poster/<MCP_TOKEN>` turns the words you forget most into something to print and put up at home. It's linked from the nav and from **Hardest words** on the stats page.
@@ -342,6 +356,7 @@ src/store.ts     sessions/timer, capture, due items, attempts
 src/grading.ts   SM-2, filler counting, grade capping
 src/drill.ts     the Drill page (/drill/<token>)
 src/game.ts      the Lampo game (/game/<token>) and its trap look-alikes
+src/palazzo.ts   the Palazzo, a 3D library and gallery of the words (/palazzo/<token>)
 src/case.ts      Il Caso: case state for the tutor's tools, and the case board (/case/<token>)
 src/stats.ts     the stats page (/stats/<token>)
 src/items.ts     the Words page (/items/<token>)

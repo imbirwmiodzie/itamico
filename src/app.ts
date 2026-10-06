@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { renderCase } from "./case.js";
 import { renderDrill } from "./drill.js";
 import { renderGame } from "./game.js";
+import { renderPalazzo } from "./palazzo.js";
 import { type ItemsView, renderItems } from "./items.js";
 import { PRIVATE_HEADERS } from "./page.js";
 import { PhotoError, Pictures, parseCandidate, photoQuery } from "./pictures.js";
@@ -137,8 +138,10 @@ export function createApp(store: Store, token: string, pictures: Pictures = new 
     }
   });
 
-  // "Drill these today": the words missed in a round, due today with their progress kept.
-  app.post("/game/:token/due", auth, async (req, res) => {
+  app.get("/palazzo/:token", auth, page(async (req) => renderPalazzo(req.params.token as string, await store.palazzoItems())));
+
+  // "Drill these today": words missed in a game or the Palazzo hunt, due today with their progress kept.
+  app.post(["/game/:token/due", "/palazzo/:token/due"], auth, async (req, res) => {
     res.set(PRIVATE_HEADERS);
     try {
       const ids = req.body?.ids;
