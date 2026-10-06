@@ -1,4 +1,4 @@
-// Shared pieces of the two browser pages (stats and words): theme tokens,
+// Shared pieces of the browser pages (drill, stats and words): theme tokens,
 // base styles, escaping and the navigation between them.
 
 export const esc = (v: unknown) =>
@@ -28,9 +28,9 @@ nav a{color:var(--ink2);text-decoration:none;padding-bottom:2px}
 nav a[aria-current]{color:var(--ink);font-weight:600;border-bottom:2px solid var(--s1)}
 `;
 
-export function nav(token: string, active: "stats" | "items"): string {
+export function nav(token: string, active: "drill" | "stats" | "items"): string {
   const t = encodeURIComponent(token);
   const link = (key: string, href: string, label: string) =>
     `<a href="${href}"${key === active ? ' aria-current="page"' : ""}>${label}</a>`;
-  return `<nav>${link("stats", `/stats/${t}`, "Progress")}${link("items", `/items/${t}`, "Words")}</nav>`;
+  return `<nav>${link("drill", `/drill/${t}`, "Drill")}${link("stats", `/stats/${t}`, "Progress")}${link("items", `/items/${t}`, "Words")}</nav>`;
 }

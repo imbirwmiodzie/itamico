@@ -45,6 +45,19 @@ The model assigns the quality from the transcript. The server applies SM-2:
 - **Fail (q < 3):** repetitions reset and the interval drops to 1 day.
 - **Ease:** updated by the standard SM-2 formula on every answer and floored at 1.3. The new interval uses the updated ease, so a low pass grows more slowly.
 
+## Drill page
+
+`https://<host>/drill/<MCP_TOKEN>` is a review on the screen in the style of SuperMemo 98, for when you can look at a phone or a desktop instead of talking. It's linked from the other two pages.
+
+- **One word at a time:** the English prompt is shown; recall the Italian, then **Show answer** (Space or Enter). The answer appears with its note and context sentence, with the word marked in the sentence.
+- **Grade yourself 0–5**, with SuperMemo's labels: Null (blackout), Bad, Fail, Pass, Good, Bright (instant). Keys `0`–`5` work too. Each button shows the interval that grade would give.
+- **Same scheduling:** grades go through the same SM-2 step as the voice drill and are saved as they're given. They're stored with mode `screen`. They don't join an open voice session, and they're left out of the filler averages on the stats page.
+- **Final drill:** words graded below Good (4) come back after the main review, again and again until you grade them Good or Bright. As in SuperMemo, these repeats don't change the schedule and aren't stored.
+- **Type answers** (optional switch, remembered in the browser): type the Italian before showing the answer. The page tells you whether it matched, ignoring case and punctuation, and flags accent-only differences. It also suggests a grade.
+- **Summary:** pass rate, average grade, how the grades were spread, final drill repeats and time taken. With nothing due, it shows when the next words come.
+
+The design is a card with an Italian tricolour edge, in light and dark mode, and it works on phones. It's guarded by the same token and sent with the same private headers as the other pages. The page needs JavaScript; the other pages don't.
+
 ## Stats page
 
 `https://<host>/stats/<MCP_TOKEN>` is a progress page for a browser, built for phones and desktops in light and dark mode. It shows:
@@ -216,6 +229,9 @@ src/app.ts       Express app, auth, stateless Streamable HTTP endpoint
 src/tools.ts     MCP tool definitions (descriptions double as tutor guidance)
 src/store.ts     sessions/timer, capture, due items, attempts
 src/grading.ts   SM-2, filler counting, grade capping
+src/drill.ts     the Drill page (/drill/<token>)
+src/stats.ts     the stats page (/stats/<token>)
+src/items.ts     the Words page (/items/<token>)
 sql/schema.sql   schema
 tutor/project-instructions.md   Claude Project custom instructions
 ```

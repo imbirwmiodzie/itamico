@@ -8,6 +8,8 @@ import { capGrade, countFillers, sm2 } from "./grading.js";
 import { loadStats } from "./stats.js";
 
 export type Mode = "word" | "sentence";
+/** Voice modes, plus "screen" for answers graded on the drill page. */
+export type AttemptMode = Mode | "screen";
 export type Source = "asked" | "fallback" | "error" | "topic_check";
 export type ListFilter = "due" | "recent" | "all";
 export type ItemFilter = "all" | "due" | "nocontext" | "failed";
@@ -218,10 +220,47 @@ export class Store {
     return result;
   }
 
+  /**
+   * Everything due, for the drill page: oldest due date first, then hardest.
+   * `preview[q]` is the interval in days that grade q would give.
+   */
+  async drillItems(limit = 200) {
+    const day = this.today();
+    const { rows } = await this.db.query(
+      `select id::int as id, italian, english, note, context, ease, interval_days, repetitions,
+              ($1::date - due_on) as overdue, count(*) over ()::int as total
+         from items where due_on <= $1
+        order by due_on, ease, id
+        limit $2`,
+      [day, limit],
+    );
+    const next = await this.db.query(
+      `select due_on as day, count(*)::int as count from items where due_on > $1
+        group by due_on order by due_on limit 1`,
+      [day],
+    );
+    const items = rows.map((r) => ({
+      id: r.id as number,
+      italian: r.italian as string,
+      english: r.english as string,
+      note: r.note as string | null,
+      context: r.context as string | null,
+      new: r.repetitions === 0,
+      overdue: r.overdue as number,
+      preview: [0, 1, 2, 3, 4, 5].map((q) => sm2(r, q).interval_days),
+    }));
+    return {
+      today: day,
+      items,
+      due: (rows[0]?.total as number) ?? 0,
+      next: (next.rows[0] as { day: string; count: number } | undefined) ?? null,
+    };
+  }
+
   async recordAttempt(input: {
     item_id: number;
     session_id?: number;
-    mode: Mode;
+    mode: AttemptMode;
     prompt?: string;
     answer: string;
     grade: number;
@@ -234,7 +273,7 @@ export class Store {
 
     return this.tx(async (c) => {
       const it = await c.query(
-        `select id, italian, ease, interval_days, repetitions from items where id = $1 for update`,
+        `select id, italian, english, ease, interval_days, repetitions from items where id = $1 for update`,
         [input.item_id],
       );
       if (!it.rows[0]) throw new TutorError(`item ${input.item_id} not found`);
@@ -245,7 +284,8 @@ export class Store {
         const s = await c.query(`select 1 from sessions where id = $1`, [sessionId]);
         if (!s.rows[0]) sessionId = null;
       }
-      if (sessionId === null) sessionId = (await this.clock())?.session_id ?? null;
+      // A drill on the screen is not part of a voice session.
+      if (sessionId === null && input.mode !== "screen") sessionId = (await this.clock())?.session_id ?? null;
 
       const next = sm2({ ease: prev.ease, interval_days: prev.interval_days, repetitions: prev.repetitions }, grade);
       const upd = await c.query(
@@ -256,7 +296,7 @@ export class Store {
       await c.query(
         `insert into attempts (item_id, session_id, mode, prompt, answer, grade, fillers)
          values ($1, $2, $3, $4, $5, $6, $7)`,
-        [input.item_id, sessionId, input.mode, blankToNull(input.prompt), input.answer, grade, fillers],
+        [input.item_id, sessionId, input.mode, blankToNull(input.prompt) ?? (input.mode === "screen" ? prev.english : null), blankToNull(input.answer), grade, fillers],
       );
 
       return compact({

@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { renderDrill } from "./drill.js";
 import { renderItems } from "./items.js";
 import { PRIVATE_HEADERS } from "./page.js";
 import { type ItemFilter, SOURCES, type Store, TutorError } from "./store.js";
@@ -81,6 +82,23 @@ export function createApp(store: Store, token: string) {
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   const filterOf = (v: unknown): ItemFilter =>
     (["all", "due", "nocontext", "failed"] as const).find((f) => f === v) ?? "all";
+
+  app.get("/drill/:token", auth, page(async (req) => renderDrill(req.params.token as string, await store.drillItems())));
+
+  // One grade from the drill page, scheduled like a voice answer (mode "screen").
+  app.post("/drill/:token/grade", auth, async (req, res) => {
+    res.set(PRIVATE_HEADERS);
+    try {
+      const id = Number(req.body?.id);
+      const grade = Number(req.body?.grade);
+      if (!Number.isInteger(id)) throw new TutorError("bad item id");
+      if (!Number.isInteger(grade) || grade < 0 || grade > 5) throw new TutorError("grade must be an integer 0..5");
+      res.json(await store.recordAttempt({ item_id: id, mode: "screen", answer: str(req.body.answer).slice(0, 500), grade, fillers: 0 }));
+    } catch (e) {
+      if (!(e instanceof TutorError)) console.error(e);
+      res.status(e instanceof TutorError ? 400 : 500).json({ error: e instanceof TutorError ? e.message : "could not save" });
+    }
+  });
 
   app.get("/stats/:token", auth, page(async (req) => renderStats(await store.stats(), req.params.token as string)));
 

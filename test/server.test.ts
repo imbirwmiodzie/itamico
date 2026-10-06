@@ -278,6 +278,43 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.match(loc(res).get("err") ?? "", /unknown source/);
   });
 
+  test("drill page: due items, grading on the screen, no voice session", async () => {
+    assert.equal((await fetch(`${base}/drill/wrong-token`)).status, 404);
+    const store = new Store(db, TZ);
+    const { item } = await store.captureItem({ italian: "la ciotola", english: "the bowl", context: "</script><b>x</b> la ciotola", source: "asked" });
+    const open = await call("start_session", {});
+
+    const d = await store.drillItems();
+    const it = d.items.find((i) => i.id === item.id)!;
+    assert.ok(it, "captured item is due");
+    assert.equal(it.new, true);
+    assert.deepEqual(it.preview, [1, 1, 1, 1, 1, 1], "a new item comes back tomorrow whatever the grade");
+    assert.equal(d.due, d.items.length);
+
+    const res = await fetch(`${base}/drill/${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const html = await res.text();
+    assert.match(html, /la ciotola/);
+    assert.ok(!html.includes("</script><b>"), "item text can't close the data script");
+
+    const grade = (body: unknown, token = TOKEN) =>
+      fetch(`${base}/drill/${token}/grade`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    assert.equal((await grade({ id: item.id, grade: 4 }, "wrong-token")).status, 404);
+    assert.equal((await grade({ id: item.id, grade: 7 })).status, 400);
+    assert.equal((await grade({ id: 999999, grade: 3 })).status, 400);
+
+    const r = await grade({ id: item.id, grade: 4, answer: "la ciotola" });
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    assert.equal(body.passed, true);
+    assert.equal(body.interval_days, 1);
+    const { rows } = await db.query("select mode, prompt, answer, session_id from attempts where item_id = $1", [item.id]);
+    assert.deepEqual(rows, [{ mode: "screen", prompt: "the bowl", answer: "la ciotola", session_id: null }], "not attached to the open voice session");
+    assert.ok(!(await store.drillItems()).items.some((i) => i.id === item.id), "graded item is no longer due");
+    await call("end_session", { session_id: open.session_id });
+  });
+
   test("errors come back as tool errors, not crashes", async () => {
     const r = await call("record_attempt", { item_id: 999999, mode: "word", answer: "x", grade: 5, fillers: 0 });
     assert.equal(r._isError, true);

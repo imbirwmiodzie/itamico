@@ -31,13 +31,22 @@ create table if not exists attempts (
   id         bigserial primary key,
   item_id    bigint not null references items(id) on delete cascade,
   session_id bigint references sessions(id) on delete set null,
-  mode       text not null check (mode in ('word', 'sentence')),
+  mode       text not null check (mode in ('word', 'sentence', 'screen')),  -- screen = the drill page
   prompt     text,                            -- English prompt given (log only, never reused)
   answer     text,                            -- transcribed user answer
   grade      int  not null check (grade between 0 and 5),  -- SM-2 quality 0..5
   fillers    int  not null default 0,
   at         timestamptz not null default now()
 );
+
+-- Databases created before the drill page only allowed the two voice modes.
+do $$ begin
+  if not exists (select 1 from pg_constraint
+                  where conname = 'attempts_mode_check' and pg_get_constraintdef(oid) like '%screen%') then
+    alter table attempts drop constraint if exists attempts_mode_check;
+    alter table attempts add constraint attempts_mode_check check (mode in ('word', 'sentence', 'screen'));
+  end if;
+end $$;
 
 create index if not exists attempts_session_idx on attempts (session_id);
 create index if not exists attempts_item_idx on attempts (item_id);
