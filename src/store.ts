@@ -184,7 +184,7 @@ export class Store {
     const day = this.today();
     const wordOnly = mode === "word";
     const { rows } = await this.db.query(
-      `select id::int as id, italian, english, note, context, repetitions, due_on
+      `select id::int as id, italian, english, note, repetitions, due_on
          from items
         where due_on <= $1 and ($2::bool is false or ${WORD_COUNT_SQL} <= $3)
         order by due_on, ease, id
@@ -193,19 +193,19 @@ export class Store {
     );
     const counts = await this.db.query(`select count(*)::int as n from items where due_on <= $1`, [day]);
     const total = counts.rows[0].n as number;
-    // The context sentence and note usually contain the answer ("non so perché"),
-    // so they travel apart from the prompt, under a name that says when to use them.
-    const items = rows.map((r) => {
-      const after = compact({ note: r.note, context: r.context });
-      return compact({
+    // The context sentence is never sent: it usually contains the answer ("non so
+    // perché"), and the tutor kept weaving it into the prompt. The note travels
+    // apart from the prompt, under a name that says when to use it.
+    const items = rows.map((r) =>
+      compact({
         id: r.id,
         english: r.english,
         italian: r.italian,
         new: r.repetitions === 0 ? true : undefined,
         due_on: r.due_on,
-        after_answer: Object.keys(after).length ? after : undefined,
-      });
-    });
+        after_answer: r.note ? { note: r.note } : undefined,
+      }),
+    );
     const result: Record<string, unknown> = { mode, items, due_total: total };
     if (wordOnly && total > 0) {
       const eligible = await this.db.query(

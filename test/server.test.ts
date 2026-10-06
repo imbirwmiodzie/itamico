@@ -121,10 +121,12 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.equal(word.held_for_sentence_mode, 1);
     assert.equal(word.due_total, 3);
     assert.equal(word.items[0].new, true);
-    // The context (which contains the answer) is kept apart from the prompt.
+    // The context (which contains the answer) is never sent with a due item; the note travels apart.
     const tragitto = word.items.find((i: { italian: string }) => i.italian === "tragitto");
     assert.equal(tragitto.context, undefined);
-    assert.equal(tragitto.after_answer.context, "what does tragitto mean");
+    assert.equal(tragitto.after_answer, undefined);
+    const screen = word.items.find((i: { italian: string }) => i.italian === "lo schermo");
+    assert.deepEqual(screen.after_answer, { note: "masculine" });
     const sentence = await call("get_due_items", { mode: "sentence", limit: 10 });
     assert.equal(sentence.items.length, 3);
 
