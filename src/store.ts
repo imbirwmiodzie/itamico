@@ -5,9 +5,12 @@ import type pg from "pg";
 import type { Db } from "./db.js";
 import { today } from "./db.js";
 import { capGrade, countFillers, sm2 } from "./grading.js";
+import type { Candidate, Photo } from "./pictures.js";
 import { loadStats } from "./stats.js";
 
 export type Mode = "word" | "sentence";
+/** Voice modes, plus "screen" for answers graded on the drill page. */
+export type AttemptMode = Mode | "screen";
 export type Source = "asked" | "fallback" | "error" | "topic_check";
 export type ListFilter = "due" | "recent" | "all";
 export type ItemFilter = "all" | "due" | "nocontext" | "failed";
@@ -38,6 +41,9 @@ export const WORD_MODE_MAX_WORDS = 4;
 /** An open session older than this is treated as abandoned (the app was just closed). */
 const STALE_SESSION = "12 hours";
 
+/** Photo columns from `left join pictures p`: `pic` is a version for the image URL, null without a photo. */
+const PIC_SQL = `floor(extract(epoch from p.fetched_at))::float8 as pic, p.source as pic_source, p.author as pic_author, p.license as pic_license`;
+
 const WORD_COUNT_SQL = `array_length(regexp_split_to_array(btrim(italian), '\\s+'), 1)`;
 
 export interface Clock {
@@ -45,6 +51,25 @@ export interface Clock {
   /** Whole minutes left, rounded up; absent for a session without a limit. */
   minutes_left?: number;
   time_up?: true;
+}
+
+export interface ForgettableWord {
+  id: number;
+  italian: string;
+  english: string;
+  note: string | null;
+  context: string | null;
+  ease: number;
+  attempts: number;
+  lapses: number;
+  last_lapse: string | null;
+  /** Grades 0..5, oldest first. */
+  grades: number[];
+  score: number;
+  pic: number | null;
+  pic_source: string | null;
+  pic_author: string | null;
+  pic_license: string | null;
 }
 
 export class TutorError extends Error {}
@@ -218,10 +243,49 @@ export class Store {
     return result;
   }
 
+  /**
+   * Everything due, for the drill page: oldest due date first, then hardest.
+   * `preview[q]` is the interval in days that grade q would give.
+   */
+  async drillItems(limit = 200) {
+    const day = this.today();
+    const { rows } = await this.db.query(
+      `select i.id::int as id, i.italian, i.english, i.note, i.context, i.ease, i.interval_days, i.repetitions,
+              ($1::date - i.due_on) as overdue, count(*) over ()::int as total, ${PIC_SQL}
+         from items i left join pictures p on p.item_id = i.id
+        where i.due_on <= $1
+        order by i.due_on, i.ease, i.id
+        limit $2`,
+      [day, limit],
+    );
+    const next = await this.db.query(
+      `select due_on as day, count(*)::int as count from items where due_on > $1
+        group by due_on order by due_on limit 1`,
+      [day],
+    );
+    const items = rows.map((r) => ({
+      id: r.id as number,
+      italian: r.italian as string,
+      english: r.english as string,
+      note: r.note as string | null,
+      context: r.context as string | null,
+      new: r.repetitions === 0,
+      overdue: r.overdue as number,
+      preview: [0, 1, 2, 3, 4, 5].map((q) => sm2(r, q).interval_days),
+      pic: r.pic as number | null,
+    }));
+    return {
+      today: day,
+      items,
+      due: (rows[0]?.total as number) ?? 0,
+      next: (next.rows[0] as { day: string; count: number } | undefined) ?? null,
+    };
+  }
+
   async recordAttempt(input: {
     item_id: number;
     session_id?: number;
-    mode: Mode;
+    mode: AttemptMode;
     prompt?: string;
     answer: string;
     grade: number;
@@ -234,7 +298,7 @@ export class Store {
 
     return this.tx(async (c) => {
       const it = await c.query(
-        `select id, italian, ease, interval_days, repetitions from items where id = $1 for update`,
+        `select id, italian, english, ease, interval_days, repetitions from items where id = $1 for update`,
         [input.item_id],
       );
       if (!it.rows[0]) throw new TutorError(`item ${input.item_id} not found`);
@@ -245,7 +309,8 @@ export class Store {
         const s = await c.query(`select 1 from sessions where id = $1`, [sessionId]);
         if (!s.rows[0]) sessionId = null;
       }
-      if (sessionId === null) sessionId = (await this.clock())?.session_id ?? null;
+      // A drill on the screen is not part of a voice session.
+      if (sessionId === null && input.mode !== "screen") sessionId = (await this.clock())?.session_id ?? null;
 
       const next = sm2({ ease: prev.ease, interval_days: prev.interval_days, repetitions: prev.repetitions }, grade);
       const upd = await c.query(
@@ -256,7 +321,7 @@ export class Store {
       await c.query(
         `insert into attempts (item_id, session_id, mode, prompt, answer, grade, fillers)
          values ($1, $2, $3, $4, $5, $6, $7)`,
-        [input.item_id, sessionId, input.mode, blankToNull(input.prompt), input.answer, grade, fillers],
+        [input.item_id, sessionId, input.mode, blankToNull(input.prompt) ?? (input.mode === "screen" ? prev.english : null), blankToNull(input.answer), grade, fillers],
       );
 
       return compact({
@@ -322,8 +387,8 @@ export class Store {
               (select coalesce(json_agg(h), '[]'::json) from (
                  select to_char(a.at at time zone $2, 'YYYY-MM-DD HH24:MI') as at, a.mode, a.prompt, a.answer, a.grade, a.fillers
                    from attempts a where a.item_id = i.id order by a.at desc limit 10) h) as history,
-              count(*) over ()::int as total
-         from items i
+              count(*) over ()::int as total, ${PIC_SQL}
+         from items i left join pictures p on p.item_id = i.id
         ${where.length ? `where ${where.join(" and ")}` : ""}
         order by ${order}
         limit $${params.length}`,
@@ -366,6 +431,61 @@ export class Store {
     const { rows } = await this.db.query(`delete from items where id = $1 returning italian`, [id]);
     if (!rows[0]) throw new TutorError(`item ${id} not found`);
     return rows[0].italian as string;
+  }
+
+  /**
+   * The words you forget most, for the printable poster. A word qualifies once
+   * it has been failed or its ease has dropped. Score: every lapse counts 1,
+   * plus up to 2 more the more recent it is (half-life 30 days), plus 2 per
+   * point of ease lost. `grades` is the answer history, oldest first (last 12).
+   */
+  async forgettable(limit = 16) {
+    const { rows } = await this.db.query(
+      `select i.id::int as id, i.italian, i.english, i.note, i.context, round(i.ease::numeric, 2)::float as ease,
+              count(a.id)::int as attempts,
+              count(a.id) filter (where a.grade < 3)::int as lapses,
+              to_char(max(a.at) filter (where a.grade < 3) at time zone $2, 'YYYY-MM-DD') as last_lapse,
+              (array_agg(a.grade order by a.at desc))[1:12] as grades,
+              round((count(a.id) filter (where a.grade < 3)
+                + 2 * coalesce(sum(power(0.5, extract(epoch from now() - a.at)::float / 86400 / 30)) filter (where a.grade < 3), 0)
+                + 2 * greatest(0, 2.5 - i.ease))::numeric, 2)::float as score,
+              ${PIC_SQL}
+         from items i join attempts a on a.item_id = i.id left join pictures p on p.item_id = i.id
+        group by i.id, p.item_id
+       having count(a.id) filter (where a.grade < 3) > 0 or i.ease < 2.5
+        order by score desc, i.ease, lower(i.italian)
+        limit $1`,
+      [limit, this.timeZone],
+    );
+    return {
+      today: this.today(),
+      words: rows.map((r) => ({ ...r, grades: (r.grades as number[]).reverse() })) as ForgettableWord[],
+    };
+  }
+
+  /** Store (or replace) the photo for an item. */
+  async savePicture(itemId: number, c: Candidate, photo: Photo, query: string) {
+    try {
+      await this.db.query(
+        `insert into pictures (item_id, mime, data, source, page_url, author, license, query)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)
+         on conflict (item_id) do update set mime = excluded.mime, data = excluded.data, source = excluded.source,
+           page_url = excluded.page_url, author = excluded.author, license = excluded.license, query = excluded.query, fetched_at = now()`,
+        [itemId, photo.mime, photo.data, c.source, c.page || null, c.author, c.license, query || null],
+      );
+    } catch (e) {
+      if ((e as { code?: string }).code === "23503") throw new TutorError(`item ${itemId} not found`);
+      throw e;
+    }
+  }
+
+  async deletePicture(itemId: number) {
+    await this.db.query(`delete from pictures where item_id = $1`, [itemId]);
+  }
+
+  async picture(itemId: number): Promise<Photo | null> {
+    const { rows } = await this.db.query(`select mime, data from pictures where item_id = $1`, [itemId]);
+    return (rows[0] as Photo | undefined) ?? null;
   }
 
   stats() {

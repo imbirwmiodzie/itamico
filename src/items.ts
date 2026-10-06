@@ -3,6 +3,7 @@
 // a phone without any script.
 
 import { esc, nav, PAGE_CSS } from "./page.js";
+import { type Candidate, credit, type PhotoSource, photoQuery, SOURCE_NAMES } from "./pictures.js";
 import { type ItemFilter, SOURCES } from "./store.js";
 
 interface Attempt {
@@ -29,6 +30,10 @@ export interface ItemRow {
   created: string;
   attempts: number;
   history: Attempt[];
+  pic: number | null;
+  pic_source: string | null;
+  pic_author: string | null;
+  pic_license: string | null;
 }
 
 export interface ItemsView {
@@ -40,6 +45,9 @@ export interface ItemsView {
   msg?: string;
   err?: string;
   open?: number;
+  /** Photo search results for one word, when asked for. */
+  photos?: { id: number; query: string; candidates: Candidate[]; err?: string };
+  photoSource?: PhotoSource;
 }
 
 const FILTERS: [ItemFilter, string][] = [
@@ -64,6 +72,38 @@ function keep(v: ItemsView): string {
   return `<input type="hidden" name="q" value="${esc(v.q)}"><input type="hidden" name="filter" value="${esc(v.filter)}">`;
 }
 
+function photoSection(i: ItemRow, v: ItemsView, base: string): string {
+  const pic = `/pic/${encodeURIComponent(v.token)}/${i.id}?v=${i.pic}`;
+  const current = i.pic !== null
+    ? `<figure class="cur"><img src="${pic}" alt="Photo for ${esc(i.italian)}"><figcaption>${esc(credit({ source: i.pic_source ?? "", author: i.pic_author, license: i.pic_license }))}</figcaption></figure>`
+    : `<p class="sub">No photo yet. Search for one to show on the poster, the cards and in the drill.</p>`;
+  const found = v.photos?.id === i.id ? v.photos : undefined;
+  const query = found?.query ?? photoQuery(i.english);
+  const candidates = found
+    ? found.err
+      ? `<div class="banner err" role="alert">${esc(found.err)}</div>`
+      : found.candidates.length
+        ? `<p class="sub">Tap a photo to use it.</p><div class="cands">${found.candidates
+            .map(
+              (c) => `<form method="post" action="${base}/${i.id}">${keep(v)}<input type="hidden" name="action" value="photo"><input type="hidden" name="pq" value="${esc(found.query)}"><input type="hidden" name="cand" value="${esc(JSON.stringify(c))}">
+<button class="cand" title="${esc(c.alt ?? "")}"><img src="${esc(c.thumb)}" alt="${esc(c.alt ?? "")}" loading="lazy"><span>${esc(credit(c))}</span></button></form>`,
+            )
+            .join("")}</div>`
+        : `<p class="sub">Nothing found for “${esc(found.query)}”. Try another word, e.g. a concrete thing that reminds you of it.</p>`
+    : "";
+  return `<h3 id="p${i.id}">Photo</h3>
+<div class="photo">${current}
+<form method="get" action="${base}#p${i.id}" class="psearch">
+  <input type="hidden" name="q" value="${esc(v.q)}"><input type="hidden" name="filter" value="${esc(v.filter)}"><input type="hidden" name="photos" value="${i.id}">
+  <input type="search" name="pq" value="${esc(query)}" aria-label="Search photos for" maxlength="100">
+  <button>${i.pic !== null ? "Find another" : "Find photos"}</button>
+</form>
+${i.pic !== null ? `<form method="post" action="${base}/${i.id}" class="premove">${keep(v)}<button name="action" value="nophoto" class="danger">Remove photo</button></form>` : ""}
+</div>
+${candidates}
+<p class="sub">Photos from ${esc(SOURCE_NAMES[v.photoSource ?? "wikimedia"])}. The chosen one is saved with the word.</p>`;
+}
+
 function itemCard(i: ItemRow, v: ItemsView, base: string): string {
   const history = i.history.length
     ? `<div class="scroll"><table class="hist"><thead><tr><th>When</th><th class="sm-hide">Mode</th><th>Prompt</th><th>Answer</th><th>Grade</th><th>Fillers</th></tr></thead><tbody>${i.history
@@ -76,7 +116,7 @@ function itemCard(i: ItemRow, v: ItemsView, base: string): string {
 
   return `<details class="item card" id="i${i.id}"${v.open === i.id ? " open" : ""}>
 <summary>
-  <span class="it">${esc(i.italian)}</span> <span class="en">${esc(i.english)}</span>
+  ${i.pic !== null ? `<img class="thumb" src="/pic/${encodeURIComponent(v.token)}/${i.id}?v=${i.pic}" alt="" loading="lazy">` : ""}<span class="it">${esc(i.italian)}</span> <span class="en">${esc(i.english)}</span>
   <span class="meta">${i.due ? `<span class="due">due</span> · ` : `next ${esc(i.due_on)} · `}${stage(i)} · ${i.attempts} ${i.attempts === 1 ? "answer" : "answers"}</span>
   ${i.context ? `<span class="ctx">“${esc(i.context)}”</span>` : ""}
 </summary>
@@ -94,6 +134,7 @@ function itemCard(i: ItemRow, v: ItemsView, base: string): string {
   </div>
   <p class="sub">Ease ${i.ease.toFixed(2)} · interval ${i.interval_days} ${i.interval_days === 1 ? "day" : "days"} · added ${esc(i.created)} · id ${i.id}</p>
 </form>
+${photoSection(i, v, base)}
 <h3>Answer history</h3>
 ${history}
 </details>`;
@@ -135,6 +176,16 @@ form.edit .wide,form.edit .buttons,form.edit .sub{grid-column:1/-1}
 .buttons{display:flex;flex-wrap:wrap;gap:8px}
 h3{font-size:13px;margin:14px 0 0;color:var(--ink2);font-weight:500}
 .scroll{overflow-x:auto}
+.thumb{width:36px;height:36px;border-radius:6px;object-fit:cover;align-self:center}
+.photo{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px;margin-top:6px}
+.photo .cur{margin:0}.photo .cur img{display:block;width:160px;height:120px;object-fit:cover;border-radius:8px}
+.photo figcaption{font-size:11px;color:var(--muted);max-width:160px;margin-top:2px}
+.psearch{display:flex;gap:8px;flex:1 1 240px}.psearch input{flex:1}
+.cands{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:6px}
+.cand{padding:0;overflow:hidden;width:100%;display:flex;flex-direction:column;text-align:left}
+.cand img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--grid)}
+.cand span{font-size:11px;color:var(--muted);padding:4px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cand:hover{border-color:var(--s1);box-shadow:0 0 0 2px var(--s1)}
 .hist td:first-child{white-space:nowrap}
 @media (max-width:600px){form.edit{grid-template-columns:1fr}.meta{margin-left:0;flex-basis:100%}.sm-hide{display:none}}
 </style></head><body><main>

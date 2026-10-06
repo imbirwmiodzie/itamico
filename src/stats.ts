@@ -47,7 +47,7 @@ export async function loadStats(db: Db, timeZone: string): Promise<Stats> {
        select to_char(d, 'YYYY-MM-DD') as day,
               count(a.id) filter (where a.grade >= 3)::int as passed,
               count(a.id) filter (where a.grade < 3)::int as failed,
-              round(avg(a.fillers)::numeric, 2)::float as fillers
+              round((avg(a.fillers) filter (where a.mode <> 'screen'))::numeric, 2)::float as fillers
          from days left join attempts a on ${local("a.at")} = d
         group by d order by d`,
       [day, timeZone],
@@ -55,8 +55,8 @@ export async function loadStats(db: Db, timeZone: string): Promise<Stats> {
     db.query(
       `select count(*) filter (where ${local("at")} > $1::date - 7)::int as attempts,
               avg((grade >= 3)::int) filter (where ${local("at")} > $1::date - 7)::float as pass_rate,
-              avg(fillers) filter (where ${local("at")} > $1::date - 7)::float as fillers,
-              avg(fillers) filter (where ${local("at")} <= $1::date - 7 and ${local("at")} > $1::date - 14)::float as prev_fillers
+              avg(fillers) filter (where ${local("at")} > $1::date - 7 and mode <> 'screen')::float as fillers,
+              avg(fillers) filter (where ${local("at")} <= $1::date - 7 and ${local("at")} > $1::date - 14 and mode <> 'screen')::float as prev_fillers
          from attempts where at > now() - interval '15 days'`,
       [day, timeZone],
     ),
@@ -139,7 +139,7 @@ function addDays(day: string, n: number): string {
 // ------------------------------------------------------------------ rendering
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const shortDate = (d: string) => `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]}`;
+export const shortDate = (d: string) => `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]}`;
 const pct = (x: number | null) => (x === null ? "–" : `${Math.round(x * 100)}%`);
 const num1 = (x: number | null) => (x === null ? "–" : x.toFixed(1));
 
@@ -328,7 +328,7 @@ ${nav(token, "stats")}
 <p class="sub">As of ${esc(shortDate(s.today))} · ${s.totals.items} words · ${s.totals.attempts} answers graded in total</p>
 
 <div class="tiles">
-${tile("Due today", String(s.totals.due), "including overdue")}
+${tile("Due today", String(s.totals.due), s.totals.due ? `including overdue · <a href="/drill/${esc(encodeURIComponent(token))}">drill now</a>` : "including overdue")}
 ${tile("Practice streak", `${s.streak} ${s.streak === 1 ? "day" : "days"}`, `${s.totals.activeDays} days practised in total`)}
 ${tile("Pass rate", pct(s.week.passRate), `${s.week.attempts} answers, last 7 days`)}
 ${tile("Fillers", num1(s.week.fillers), fillerDelta)}
@@ -341,7 +341,7 @@ ${both((W) => answersChart(s.daily, W))}
 <details><summary>Table</summary><div class="scroll">${table(["Day", "Passed", "Failed"], daysWithAnswers.map((d) => [d.day, d.passed, d.failed]))}</div></details>
 </section>
 
-<section class="card"><h2>Hesitation</h2><p class="sub">Average filler sounds (eh, ehm, uh…) per answer. Lower is better; days without answers are gaps.</p>
+<section class="card"><h2>Hesitation</h2><p class="sub">Average filler sounds (eh, ehm, uh…) per spoken answer. Lower is better; days without spoken answers are gaps.</p>
 ${both((W) => fillersChart(s.daily, W))}
 <details><summary>Table</summary><div class="scroll">${table(["Day", "Fillers per answer"], daysWithAnswers.map((d) => [d.day, d.fillers ?? "–"]))}</div></details>
 </section>
@@ -355,7 +355,7 @@ ${both((W) => forecastChart(s.forecast, W))}
 <details><summary>Table</summary><div class="scroll">${table(["Day", "Due"], s.forecast.map((d) => [d.day, d.count]))}</div></details>
 </section>
 
-<section class="card"><h2>Hardest words</h2><p class="sub">Most failed answers, then lowest ease.</p>
+<section class="card"><h2>Hardest words</h2><p class="sub">Most failed answers, then lowest ease. <a href="/poster/${esc(encodeURIComponent(token))}">Print them as a poster</a></p>
 ${s.hardest.length ? `<div class="scroll">${table(["Italian", "English", "Fails", "Answers", "Ease", "Last"], s.hardest.map((h) => [h.italian, h.english, h.fails, h.attempts, h.ease.toFixed(2), h.last]), "words", [3, 4, 5])}</div>` : `<p class="muted">No failed answers yet.</p>`}
 </section>
 

@@ -8,11 +8,24 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createApp } from "../src/app.js";
 import { createPool, type Db, migrate, today } from "../src/db.js";
+import { Pictures } from "../src/pictures.js";
 import { Store } from "../src/store.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const TOKEN = "test-token-0123456789abcdef";
 const TZ = "Europe/Warsaw";
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 0xff, 0xd9]);
+
+// Stands in for Wikimedia Commons: one photo per search, named after the query,
+// except "nothing", which finds nothing.
+const fakePhotos = (async (input: string | URL | Request) => {
+  const url = new URL(String(input));
+  if (url.hostname === "upload.wikimedia.org") return new Response(JPEG, { headers: { "content-type": "image/jpeg" } });
+  const q = (url.searchParams.get("gsrsearch") ?? "").replace(" filetype:bitmap", "");
+  if (q === "nothing") return Response.json({});
+  const slug = encodeURIComponent(q.replace(/\s+/g, "_"));
+  return Response.json({ query: { pages: [{ title: `File:${q}.jpg`, index: 1, imageinfo: [{ mime: "image/jpeg", thumburl: `https://upload.wikimedia.org/x/960px-${slug}.jpg`, descriptionurl: `https://commons.wikimedia.org/wiki/File:${slug}`, extmetadata: { Artist: { value: "Ugo Foto" }, LicenseShortName: { value: "CC BY 4.0" } } }] }] } });
+}) as typeof fetch;
 
 describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
   let db: Db;
@@ -28,10 +41,10 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
 
   before(async () => {
     db = createPool(url!);
-    await db.query("drop table if exists attempts, items, sessions cascade");
+    await db.query("drop table if exists pictures, attempts, items, sessions cascade");
     await migrate(db);
     await migrate(db); // idempotent
-    const app = createApp(new Store(db, TZ), TOKEN);
+    const app = createApp(new Store(db, TZ), TOKEN, new Pictures({ fetch: fakePhotos }));
     http = await new Promise((resolve) => {
       const s = app.listen(0, () => resolve(s));
     });
@@ -276,6 +289,113 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.equal(loc(res).get("msg"), "Added “sfasciare”.");
     res = await post(`${TOKEN}/new`, { italian: "x", english: "y", source: "bogus" });
     assert.match(loc(res).get("err") ?? "", /unknown source/);
+  });
+
+  test("drill page: due items, grading on the screen, no voice session", async () => {
+    assert.equal((await fetch(`${base}/drill/wrong-token`)).status, 404);
+    const store = new Store(db, TZ);
+    const { item } = await store.captureItem({ italian: "la ciotola", english: "the bowl", context: "</script><b>x</b> la ciotola", source: "asked" });
+    const open = await call("start_session", {});
+
+    const d = await store.drillItems();
+    const it = d.items.find((i) => i.id === item.id)!;
+    assert.ok(it, "captured item is due");
+    assert.equal(it.new, true);
+    assert.deepEqual(it.preview, [1, 1, 1, 1, 1, 1], "a new item comes back tomorrow whatever the grade");
+    assert.equal(d.due, d.items.length);
+
+    const res = await fetch(`${base}/drill/${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const html = await res.text();
+    assert.match(html, /la ciotola/);
+    assert.ok(!html.includes("</script><b>"), "item text can't close the data script");
+
+    const grade = (body: unknown, token = TOKEN) =>
+      fetch(`${base}/drill/${token}/grade`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    assert.equal((await grade({ id: item.id, grade: 4 }, "wrong-token")).status, 404);
+    assert.equal((await grade({ id: item.id, grade: 7 })).status, 400);
+    assert.equal((await grade({ id: 999999, grade: 3 })).status, 400);
+
+    const r = await grade({ id: item.id, grade: 4, answer: "la ciotola" });
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    assert.equal(body.passed, true);
+    assert.equal(body.interval_days, 1);
+    const { rows } = await db.query("select mode, prompt, answer, session_id from attempts where item_id = $1", [item.id]);
+    assert.deepEqual(rows, [{ mode: "screen", prompt: "the bowl", answer: "la ciotola", session_id: null }], "not attached to the open voice session");
+    assert.ok(!(await store.drillItems()).items.some((i) => i.id === item.id), "graded item is no longer due");
+    await call("end_session", { session_id: open.session_id });
+  });
+
+  test("poster page: the most forgotten words first, token-guarded", async () => {
+    assert.equal((await fetch(`${base}/poster/wrong-token`)).status, 404);
+    const store = new Store(db, TZ);
+    const easy = (await store.captureItem({ italian: "facile", english: "easy", source: "asked" })).item.id;
+    const hard = (await store.captureItem({ italian: "difficilissimo", english: "very hard", source: "asked" })).item.id;
+    await store.recordAttempt({ item_id: easy, mode: "screen", answer: "", grade: 5, fillers: 0 });
+    for (const grade of [1, 0, 4, 1]) await store.recordAttempt({ item_id: hard, mode: "screen", answer: "", grade, fillers: 0 });
+
+    const { words } = await store.forgettable(50);
+    assert.equal(words[0].italian, "difficilissimo");
+    assert.equal(words[0].lapses, 3);
+    assert.deepEqual(words[0].grades, [1, 0, 4, 1], "history oldest first");
+    assert.ok(!words.some((w) => w.italian === "facile"), "a word never forgotten, ease intact, is left off");
+
+    const res = await fetch(`${base}/poster/${TOKEN}?layout=cards&n=8&size=a3`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const html = await res.text();
+    assert.match(html, /difficilissimo/);
+    assert.match(html, /class="sheet cards"/);
+  });
+
+  test("photos: search and choose on the Words page, fill the poster, serve, remove", async () => {
+    const store = new Store(db, TZ);
+    const id = (await store.searchItems("difficilissimo")).items[0].id;
+
+    // Search: the query defaults to the English meaning; candidates carry a credit.
+    let page = await (await fetch(`${base}/items/${TOKEN}?q=difficilissimo&photos=${id}`)).text();
+    assert.match(page, /name="pq" value="very hard"/);
+    assert.match(page, /960px-very_hard\.jpg/);
+    assert.match(page, /Ugo Foto \/ Wikimedia Commons, CC BY 4.0/);
+    const cand = page.match(/name="cand" value="([^"]+)"/)![1].replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+    page = await (await fetch(`${base}/items/${TOKEN}?q=difficilissimo&photos=${id}&pq=nothing`)).text();
+    assert.match(page, /Nothing found for “nothing”/);
+
+    // Choose it: downloaded and stored.
+    const post = (body: Record<string, string>) =>
+      fetch(`${base}/items/${TOKEN}/${id}`, { method: "POST", body: new URLSearchParams({ q: "", filter: "all", ...body }), redirect: "manual" });
+    let res = await post({ action: "photo", cand, pq: "very hard" });
+    assert.match(res.headers.get("location") ?? "", /msg=Photo\+saved/);
+    const saved = (await db.query("select mime, source, author, license, query, length(data)::int as n from pictures where item_id = $1", [id])).rows[0];
+    assert.deepEqual(saved, { mime: "image/jpeg", source: "wikimedia", author: "Ugo Foto", license: "CC BY 4.0", query: "very hard", n: JPEG.length });
+    res = await post({ action: "photo", cand: JSON.stringify({ source: "pexels", full: "http://127.0.0.1/secret" }) });
+    assert.match(new URL(res.headers.get("location")!, base).searchParams.get("err") ?? "", /bad photo choice/);
+
+    // Served behind the token, with its type.
+    const pic = await fetch(`${base}/pic/${TOKEN}/${id}?v=1`);
+    assert.equal(pic.status, 200);
+    assert.equal(pic.headers.get("content-type"), "image/jpeg");
+    assert.deepEqual(Buffer.from(await pic.arrayBuffer()), JPEG);
+    assert.equal((await fetch(`${base}/pic/wrong-token/${id}`)).status, 404);
+    assert.equal((await fetch(`${base}/pic/${TOKEN}/999999`)).status, 404);
+
+    // The poster shows it with its credit, and fills in the rest on request.
+    page = await (await fetch(`${base}/poster/${TOKEN}?layout=pictures&n=24`)).text();
+    assert.match(page, new RegExp(`/pic/${TOKEN}/${id}\\?v=\\d+`));
+    assert.match(page, /Ugo Foto \/ Wikimedia Commons, CC BY 4.0/);
+    const missing = (await store.forgettable(24)).words.filter((w) => w.pic === null).length;
+    assert.ok(missing > 0);
+    res = await fetch(`${base}/poster/${TOKEN}/photos`, { method: "POST", body: new URLSearchParams({ layout: "pictures", n: "24", size: "a4", ink: "color" }), redirect: "manual" });
+    const back = new URL(res.headers.get("location")!, base);
+    assert.equal(back.searchParams.get("layout"), "pictures");
+    assert.equal(back.searchParams.get("msg"), `Added ${missing} ${missing === 1 ? "photo" : "photos"}.`);
+    assert.equal((await store.forgettable(24)).words.filter((w) => w.pic === null).length, 0);
+
+    // Remove it again.
+    await post({ action: "nophoto" });
+    assert.equal((await db.query("select 1 from pictures where item_id = $1", [id])).rowCount, 0);
   });
 
   test("errors come back as tool errors, not crashes", async () => {
