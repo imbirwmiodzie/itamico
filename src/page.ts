@@ -26,14 +26,14 @@ th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--grid);vertic
 th{color:var(--ink2);font-weight:500}td{font-variant-numeric:tabular-nums}
 .words td:first-child{font-weight:600}
 .card{background:var(--surface);border:1px solid var(--ring);border-radius:12px;padding:14px;margin-top:12px}
-nav{display:flex;gap:16px;font-size:14px;margin:0 0 14px}
+nav{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:14px;margin:0 0 14px}
 nav a{color:var(--ink2);text-decoration:none;padding-bottom:2px}
 nav a[aria-current]{color:var(--ink);font-weight:600;border-bottom:2px solid var(--s1)}
 `;
 
-export function nav(token: string, active: "drill" | "game" | "stats" | "items" | "poster"): string {
+export function nav(token: string, active: "drill" | "game" | "case" | "stats" | "items" | "poster"): string {
   const t = encodeURIComponent(token);
   const link = (key: string, href: string, label: string) =>
     `<a href="${href}"${key === active ? ' aria-current="page"' : ""}>${label}</a>`;
-  return `<nav>${link("drill", `/drill/${t}`, "Drill")}${link("game", `/game/${t}`, "Game")}${link("stats", `/stats/${t}`, "Progress")}${link("items", `/items/${t}`, "Words")}${link("poster", `/poster/${t}`, "Poster")}</nav>`;
+  return `<nav>${link("drill", `/drill/${t}`, "Drill")}${link("game", `/game/${t}`, "Game")}${link("case", `/case/${t}`, "Il Caso")}${link("stats", `/stats/${t}`, "Progress")}${link("items", `/items/${t}`, "Words")}${link("poster", `/poster/${t}`, "Poster")}</nav>`;
 }

@@ -17,12 +17,15 @@ It is a remote MCP server over Streamable HTTP, written in TypeScript, backed by
 
 | Tool | Input | Returns |
 |---|---|---|
-| `start_session` | `limit_min?` | `session_id`, `due_count`, `due_word_mode`, `minutes_left`, `conversation_words` |
+| `start_session` | `limit_min?` | `session_id`, `due_count`, `due_word_mode`, `minutes_left`, `conversation_words`, `case` (the open mystery, or null) |
 | `capture_item` | `italian`, `english`, `note?`, `context?`, `source` | the item and `captured` or `recaptured` |
 | `get_due_items` | `mode`, `limit?` (10) | due items by `due_on`, then lowest ease |
 | `record_attempt` | `item_id`, `session_id?`, `mode`, `prompt?`, `answer`, `grade`, `fillers` | applied `grade`, `interval_days`, `due_on` |
 | `end_session` | `session_id` | items captured and reviewed, plus totals |
 | `list_items` | `filter?` (`due` / `recent` / `all`), `limit?` | items, for review on a screen |
+| `get_case` | none | the open [Il Caso](#il-caso-a-mystery-told-on-your-rides) mystery with clue progress and events, or candidate clues for a new one |
+| `open_case` | `title`, `premise`, `solution`, `clue_ids` (3–6) | the new case |
+| `save_episode` | `case_id`, `headline`, `story_so_far`, `outcome?` (`solved` / `dropped`) | episode number and clue progress |
 
 While a timed session is open, every response also carries `session_id` and `minutes_left`. When the limit passes, the response adds `time_up: true` and a one-line instruction to finish the current item and call `end_session`.
 
@@ -57,6 +60,19 @@ The model assigns the quality from the transcript. The server applies SM-2:
 - **Summary:** pass rate, average grade, how the grades were spread, final drill repeats and time taken. With nothing due, it shows when the next words come.
 
 The design is a card with an Italian tricolour edge, in light and dark mode, and it works on phones. It's guarded by the same token and sent with the same private headers as the other pages. The page needs JavaScript; the other pages don't.
+
+## Il Caso: a mystery told on your rides
+
+Say **“il caso”** to the tutor and it tells you a noir mystery in episodes, one per ride. You are the detective. The clues are your weakest words, and the plot moves with your memory:
+
+- **Episodes:** each one replaces the plain drill. The story stops at gaps only today's due words can fill: *"Il portiere dice che qualcuno ha forzato il… the tailgate?"* Those answers are graded and scheduled like any drill answer. In between, you decide what the detective does next, in a full Italian sentence, and your choices change the story.
+- **Clues follow SM-2:** a clue counts as **secured** once its review interval reaches 21 days. Forget one and it goes **freddo** (cold): the next episode opens with a setback, such as a witness taking back a statement. When one gets secured, it's a breakthrough.
+- **The finale** unlocks only when every clue is secured. Then you name the culprit and explain why, in Italian, using the clue words. A case lasts a few weeks, about as long as it takes the words to stick.
+- **Continuity:** the solution is fixed when the case opens and stays sealed. After each episode the tutor saves a headline and the story so far, so the next ride picks up the plot.
+
+The tutor drives it with three tools: `get_case` (the open case, what changed since the last episode, or candidate clues for a new case), `open_case`, and `save_episode`. `start_session` mentions an open case, so the tutor can offer the next episode.
+
+`https://<host>/case/<MCP_TOKEN>` is the **case board**: a corkboard of the clues, pinned with red string to the unknown culprit. Each clue card shows its photo if it has one, its progress towards secured, and whether it's due today. Below the board are the premise, the story so far, the episode log, and an archive of closed cases with their solutions revealed. The Progress page shows a summary card.
 
 ## Game page
 
@@ -326,6 +342,7 @@ src/store.ts     sessions/timer, capture, due items, attempts
 src/grading.ts   SM-2, filler counting, grade capping
 src/drill.ts     the Drill page (/drill/<token>)
 src/game.ts      the Lampo game (/game/<token>) and its trap look-alikes
+src/case.ts      Il Caso: case state for the tutor's tools, and the case board (/case/<token>)
 src/stats.ts     the stats page (/stats/<token>)
 src/items.ts     the Words page (/items/<token>)
 src/poster.ts    the printable poster (/poster/<token>)

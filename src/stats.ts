@@ -4,6 +4,7 @@
 
 import type { Db } from "./db.js";
 import { today } from "./db.js";
+import { CASE_CARD_CSS, type CaseFile, caseCard } from "./case.js";
 import { esc, nav, PAGE_CSS } from "./page.js";
 
 export interface Stats {
@@ -488,7 +489,7 @@ function tile(label: string, value: string, sub = ""): string {
   return `<div class="tile"><div class="tl">${esc(label)}</div><div class="tv">${esc(value)}</div>${sub ? `<div class="ts">${sub}</div>` : ""}</div>`;
 }
 
-export function renderStats(s: Stats, token: string): string {
+export function renderStats(s: Stats, token: string, openCase: CaseFile | null = null): string {
   const learned = s.stages[2].count + s.stages[3].count;
   const fillerDelta =
     s.week.fillers !== null && s.week.prevFillers !== null
@@ -548,6 +549,7 @@ details{margin-top:8px;font-size:13px}summary{cursor:pointer;color:var(--ink2)}
 .hl{color:var(--ink2)}.hl b{display:inline-block;width:1.2em;color:var(--ink)}
 .track{height:14px;display:flex}.hbar{display:block;height:100%;border-radius:0 4px 4px 0;min-width:2px}.hbar.s1{background:var(--s1)}.hbar.s2{background:var(--s2)}
 .hv{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink2)}
+${CASE_CARD_CSS}
 .narrow{display:none}
 @media (max-width:600px){.wide{display:none}.narrow{display:block}.sm-hide{display:none}}
 #tip{position:fixed;pointer-events:none;background:var(--surface);color:var(--ink);border:1px solid var(--ring);border-radius:8px;padding:6px 10px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.12);display:none;z-index:9}
@@ -564,6 +566,8 @@ ${tile("Pass rate", pct(s.week.passRate), `${s.week.attempts} answers, last 7 da
 ${tile("Fillers", num1(s.week.fillers), fillerDelta)}
 ${tile("Learned", String(learned), "interval of a week or more")}
 </div>
+
+${caseCard(openCase, token)}
 
 <section class="card"><h2>Practice calendar</h2><p class="sub">Answers per day, one square per day, newest week on the right. ${calActive} ${calActive === 1 ? "day" : "days"} practised in the last ${CAL_WEEKS} weeks.</p>
 <div class="wide">${calendarChart(s.calendar, CAL_WEEKS, calMax, WIDE)}</div><div class="narrow">${calendarChart(s.calendar, CAL_WEEKS_NARROW, calMax, NARROW)}</div>

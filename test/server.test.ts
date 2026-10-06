@@ -81,14 +81,17 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.equal((await fetch(`${base}/health`)).status, 200);
   });
 
-  test("lists the six tools", async () => {
+  test("lists the nine tools", async () => {
     const { tools } = await client.listTools();
     assert.deepEqual(tools.map((t) => t.name).sort(), [
       "capture_item",
       "end_session",
+      "get_case",
       "get_due_items",
       "list_items",
+      "open_case",
       "record_attempt",
+      "save_episode",
       "start_session",
     ]);
   });
@@ -484,6 +487,80 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.equal(after.rows[0].due_on, today(TZ), "due today");
     assert.equal(after.rows[0].repetitions, 3, "learning progress kept");
     assert.equal((await post("due", { ids: "x" })).status, 400);
+  });
+
+  test("Il Caso: open a case, episodes follow memory, finale only when every clue is secured", async () => {
+    await db.query("delete from cases");
+    assert.equal((await call("start_session", {})).case, null);
+    const ins = await db.query(
+      `insert into items (italian, english, source, repetitions, interval_days, due_on) values
+         ('il cofano', 'the car bonnet', 'fallback', 2, 6, current_date - 1),
+         ('la targa', 'the number plate', 'asked', 0, 0, current_date - 1),
+         ('il ventaglio rosso', 'the red fan', 'asked', 1, 1, current_date + 1)
+       returning id::int as id`,
+    );
+    const [tailgate, wrap, fan] = ins.rows.map((r) => r.id as number);
+
+    const none = await call("get_case");
+    assert.equal(none.case, null);
+    assert.ok(none.candidate_clues.length >= 3);
+    assert.match(none.instruction, /open_case/);
+
+    const opened = await call("open_case", {
+      title: "La Vespa <rubata>",
+      premise: "Una Vespa sparisce da un garage di Bologna.",
+      solution: "Il portiere: ha forzato il cofano, ha cambiato la targa, ha perso il ventaglio rosso.",
+      clue_ids: [tailgate, wrap, fan],
+    });
+    assert.equal(opened.case.episode, 1);
+    assert.match(opened.case.solution, /portiere/);
+    assert.deepEqual(opened.case.events, []);
+    assert.deepEqual(opened.case.clues.map((c: { progress: string }) => c.progress), ["2/4", "0/4", "1/4"]);
+    assert.ok(opened.case.clues[0].due_today && !opened.case.clues[2].due_today);
+    const again = await call("open_case", { title: "x", premise: "x", solution: "x", clue_ids: [tailgate, wrap, fan] });
+    assert.ok(again._isError && /already open/.test(again.error));
+    assert.ok((await call("open_case", { title: "x", premise: "x", solution: "x", clue_ids: [tailgate, tailgate, wrap] }))._isError, "3 different clues");
+
+    const s = await call("start_session", {});
+    assert.deepEqual(s.case, { title: "La Vespa <rubata>", next_episode: 1, clues_secured: "0/3", due_clues: 2, solvable: false });
+
+    // The tailgate lapses, the wrap gets secured: a setback and a breakthrough.
+    await db.query("update items set repetitions = 0, interval_days = 1 where id = $1", [tailgate]);
+    await db.query("update items set repetitions = 4, interval_days = 30 where id = $1", [wrap]);
+    const ep1 = await call("get_case");
+    assert.equal(ep1.case.events.length, 2);
+    assert.match(ep1.case.events[0], /"il cofano" went cold.*setback/);
+    assert.match(ep1.case.events[1], /"la targa" is now secured/);
+    assert.equal(ep1.case.solvable, false);
+
+    const early = await call("save_episode", { case_id: opened.case.case_id, headline: "x", story_so_far: "x", outcome: "solved" });
+    assert.ok(early._isError && /il cofano, il ventaglio rosso not secured/.test(early.error));
+    const saved = await call("save_episode", { case_id: opened.case.case_id, headline: "Il portiere mente", story_so_far: "Il detective scopre un garage forzato." });
+    assert.equal(saved.episode, 1);
+    const ep2 = await call("get_case");
+    assert.equal(ep2.case.episode, 2);
+    assert.deepEqual(ep2.case.events, [], "events are relative to the last saved episode");
+    assert.equal(ep2.case.story_so_far, "Il detective scopre un garage forzato.");
+
+    const board = await (await fetch(`${base}/case/${TOKEN}`)).text();
+    assert.match(board, /La Vespa &lt;rubata&gt;/);
+    assert.match(board, /Il portiere mente/);
+    assert.match(board, /Sigillata/);
+    assert.ok(!board.includes("perso il ventaglio"), "the solution stays sealed while the case is open");
+    assert.match(await (await fetch(`${base}/stats/${TOKEN}`)).text(), /Il Caso: <span lang="it">La Vespa &lt;rubata&gt;/);
+    assert.equal((await fetch(`${base}/case/wrong-token`)).status, 404);
+
+    // Every clue secured: the finale, then the case closes.
+    await db.query("update items set repetitions = 4, interval_days = 25 where id = any($1::bigint[])", [[tailgate, wrap, fan]]);
+    const finale = await call("get_case");
+    assert.equal(finale.case.solvable, true);
+    assert.match(finale.instruction, /finale/);
+    const solved = await call("save_episode", { case_id: opened.case.case_id, headline: "Il portiere confessa", story_so_far: "Caso chiuso.", outcome: "solved" });
+    assert.equal(solved.closed, "solved");
+    assert.equal((await call("get_case")).case, null);
+    const archive = await (await fetch(`${base}/case/${TOKEN}`)).text();
+    assert.match(archive, /Risolto/);
+    assert.match(archive, /perso il ventaglio rosso/, "the archive reveals the solution");
   });
 
   test("drill word list: bearer only, due first, short items only, no grading", async () => {

@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { renderCase } from "./case.js";
 import { renderDrill } from "./drill.js";
 import { renderGame } from "./game.js";
 import { type ItemsView, renderItems } from "./items.js";
@@ -215,7 +216,16 @@ export function createApp(store: Store, token: string, pictures: Pictures = new 
     }
   });
 
-  app.get("/stats/:token", auth, page(async (req) => renderStats(await store.stats(), req.params.token as string)));
+  app.get(
+    "/stats/:token",
+    auth,
+    page(async (req) => {
+      const [stats, board] = await Promise.all([store.stats(), store.caseBoard()]);
+      return renderStats(stats, req.params.token as string, board.open);
+    }),
+  );
+
+  app.get("/case/:token", auth, page(async (req) => renderCase(await store.caseBoard(), req.params.token as string)));
 
   // Desktop widget: the page, and the data it re-fetches every 10 minutes.
   app.get("/widget/:token", auth, page(async (req) => {

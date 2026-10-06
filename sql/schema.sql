@@ -76,6 +76,38 @@ create table if not exists game_rounds (
   at          timestamptz not null default now()
 );
 
+-- Il Caso: a mystery the tutor tells in episodes across rides (see src/case.ts).
+-- Its clues are hard words; the finale unlocks when every clue is secured.
+create table if not exists cases (
+  id         bigserial primary key,
+  title      text not null,
+  premise    text not null,
+  solution   text not null,                 -- fixed when the case opens, revealed at the end
+  story      text not null default '',      -- the story so far, rewritten after each episode
+  episodes   int  not null default 0,
+  outcome    text check (outcome in ('solved', 'dropped')),  -- null while open
+  opened_at  timestamptz not null default now(),
+  closed_at  timestamptz
+);
+-- At most one open case.
+create unique index if not exists cases_one_open on cases ((true)) where outcome is null;
+
+create table if not exists case_clues (
+  case_id    bigint not null references cases(id) on delete cascade,
+  item_id    bigint not null references items(id) on delete cascade,
+  ord        int not null,
+  stage_seen int not null default 0,        -- the clue's stage at the last episode: setbacks and breakthroughs
+  primary key (case_id, item_id)
+);
+
+create table if not exists case_episodes (
+  case_id  bigint not null references cases(id) on delete cascade,
+  n        int not null,
+  headline text not null,
+  at       timestamptz not null default now(),
+  primary key (case_id, n)
+);
+
 -- Full-text search for the Words page; must match ITEM_DOC_SQL in src/store.ts.
 create index if not exists items_fts_idx on items using gin (
   to_tsvector('simple', translate(lower(italian || ' ' || english || ' ' || coalesce(note, '') || ' ' || coalesce(context, '')),

@@ -4,6 +4,7 @@
 import type pg from "pg";
 import type { Db } from "./db.js";
 import { today } from "./db.js";
+import { caseForTutor, caseSummary, loadCaseBoard, openCase, saveEpisode } from "./case.js";
 import { capGrade, countFillers, sm2 } from "./grading.js";
 import type { Candidate, Photo } from "./pictures.js";
 import { loadStats } from "./stats.js";
@@ -143,8 +144,27 @@ export class Store {
         due_count: due.rows[0].total as number,
         due_word_mode: due.rows[0].word_mode as number,
         conversation_words: words.rows as { italian: string; english: string }[],
+        case: await caseSummary(this.db, day, this.timeZone),
       };
     });
+  }
+
+  // ---------------------------------------------------------------- Il Caso
+
+  getCase() {
+    return caseForTutor(this.db, this.today(), this.timeZone);
+  }
+
+  openCase(input: { title: string; premise: string; solution: string; clue_ids: number[] }) {
+    return openCase(this.db, this.today(), this.timeZone, input);
+  }
+
+  saveEpisode(input: { case_id: number; headline: string; story_so_far: string; outcome?: "solved" | "dropped" }) {
+    return saveEpisode(this.db, this.today(), this.timeZone, input);
+  }
+
+  caseBoard() {
+    return loadCaseBoard(this.db, this.today(), this.timeZone);
   }
 
   async endSession(sessionId: number) {
