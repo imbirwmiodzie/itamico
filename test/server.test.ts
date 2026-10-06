@@ -83,6 +83,7 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
   test("a full session: capture, drill, timer, summary", async () => {
     const s = await call("start_session", { limit_min: 10 });
     assert.equal(s.due_count, 0);
+    assert.deepEqual(s.conversation_words, []);
     assert.equal(s.minutes_left, 10);
     const sid = s.session_id;
 
@@ -195,9 +196,27 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     const one = await call("start_session", { limit_min: 5 });
     const two = await call("start_session", {});
     assert.notEqual(one.session_id, two.session_id);
+    // Recently learned words from the previous test come back for free conversation.
+    assert.deepEqual(
+      two.conversation_words.map((w: { italian: string }) => w.italian).sort(),
+      ["lo schermo", "su una pista ciclabile di città", "tragitto"],
+    );
+    assert.deepEqual(
+      two.conversation_words.find((w: { italian: string }) => w.italian === "tragitto"),
+      { italian: "tragitto", english: "commute" },
+    );
     assert.equal(two.minutes_left, undefined);
     const { rows } = await db.query("select ended_at from sessions where id = $1", [one.session_id]);
     assert.notEqual(rows[0].ended_at, null);
+
+    // Mature words are left out of conversation.
+    await db.query("update items set interval_days = 30 where italian = 'lo schermo'");
+    const three = await call("start_session", {});
+    assert.deepEqual(
+      three.conversation_words.map((w: { italian: string }) => w.italian).sort(),
+      ["su una pista ciclabile di città", "tragitto"],
+    );
+    await db.query("update items set interval_days = 1 where italian = 'lo schermo'");
   });
 
   test("stats page: token-guarded, renders data, escapes user text", async () => {

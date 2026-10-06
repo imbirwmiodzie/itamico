@@ -35,6 +35,9 @@ export function searchTerms(q: string): string[] {
 /** Word mode only drills items short enough to say in one breath while riding. */
 export const WORD_MODE_MAX_WORDS = 4;
 
+/** How many recently learned words start_session hands the tutor for free conversation. */
+export const CONVERSATION_WORDS = 8;
+
 /** An open session older than this is treated as abandoned (the app was just closed). */
 const STALE_SESSION = "12 hours";
 
@@ -94,10 +97,26 @@ export class Store {
            from items where due_on <= $1`,
         [day, WORD_MODE_MAX_WORDS],
       );
+      // Words to steer free conversation towards: captured or practised in the
+      // last three weeks and not yet mature. A random pick from the 30 freshest,
+      // so each session's questions differ from the last one's.
+      const words = await c.query(
+        `select italian, english from (
+           select italian, english from items i
+            where i.interval_days < 21
+              and (i.last_captured_at > now() - interval '21 days'
+                   or exists (select 1 from attempts a where a.item_id = i.id and a.at > now() - interval '21 days'))
+            order by i.last_captured_at desc
+            limit 30) recent
+          order by random()
+          limit $1`,
+        [CONVERSATION_WORDS],
+      );
       return {
         session_id: s.rows[0].id as number,
         due_count: due.rows[0].total as number,
         due_word_mode: due.rows[0].word_mode as number,
+        conversation_words: words.rows as { italian: string; english: string }[],
       };
     });
   }
