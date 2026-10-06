@@ -4,6 +4,8 @@ export interface Config {
   port: number;
   host: string;
   timeZone: string;
+  /** Pexels API key for word photos; without it photos come from Wikimedia Commons. */
+  pexelsKey?: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -16,5 +18,5 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   // Throws RangeError on an unknown zone, so a typo fails at boot, not mid-ride.
   new Intl.DateTimeFormat("en-CA", { timeZone });
 
-  return { databaseUrl, token, port: Number(env.PORT) || 8080, host: env.HOST || "0.0.0.0", timeZone };
+  return { databaseUrl, token, port: Number(env.PORT) || 8080, host: env.HOST || "0.0.0.0", timeZone, pexelsKey: env.PEXELS_API_KEY || undefined };
 }

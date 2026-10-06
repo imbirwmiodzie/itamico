@@ -18,6 +18,8 @@
 #   DATABASE_URL  external Postgres. Default: local Postgres, created here
 #   TUTOR_TZ      time zone for "due today". Default: Europe/Warsaw
 #   MCP_TOKEN     secret token. Default: generated on first install, kept on updates
+#   PEXELS_API_KEY  free key from pexels.com/api for word photos. Default: none, and
+#                 photos come from Wikimedia Commons
 #   PLAIN_HTTP=1  no certificate: serve plain http on HTTPS_PORT. No port 80 needed, but
 #                 traffic (including the token) is unencrypted, and Claude connectors
 #                 require https. For testing; re-run with PLAIN_HTTP=0 to switch to https.
@@ -53,6 +55,7 @@ if [[ -f $ENV_FILE ]]; then
   MCP_TOKEN=${MCP_TOKEN:-$(prev MCP_TOKEN)}
   DATABASE_URL=${DATABASE_URL:-$(prev DATABASE_URL)}
   TUTOR_TZ=${TUTOR_TZ:-$(prev TUTOR_TZ)}
+  PEXELS_API_KEY=${PEXELS_API_KEY:-$(prev PEXELS_API_KEY)}
   DOMAIN=${DOMAIN:-$(prev DOMAIN)}
   HTTPS_PORT=${HTTPS_PORT:-$(prev HTTPS_PORT)}
   PLAIN_HTTP=${PLAIN_HTTP:-$(prev PLAIN_HTTP)}
@@ -111,6 +114,7 @@ cat >"$ENV_FILE" <<EOF
 DATABASE_URL=$DATABASE_URL
 MCP_TOKEN=$MCP_TOKEN
 TUTOR_TZ=$TUTOR_TZ
+PEXELS_API_KEY=${PEXELS_API_KEY:-}
 HOST=127.0.0.1
 PORT=$PORT
 DOMAIN=${DOMAIN:-}

@@ -8,11 +8,24 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createApp } from "../src/app.js";
 import { createPool, type Db, migrate, today } from "../src/db.js";
+import { Pictures } from "../src/pictures.js";
 import { Store } from "../src/store.js";
 
 const url = process.env.TEST_DATABASE_URL;
 const TOKEN = "test-token-0123456789abcdef";
 const TZ = "Europe/Warsaw";
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 0xff, 0xd9]);
+
+// Stands in for Wikimedia Commons: one photo per search, named after the query,
+// except "nothing", which finds nothing.
+const fakePhotos = (async (input: string | URL | Request) => {
+  const url = new URL(String(input));
+  if (url.hostname === "upload.wikimedia.org") return new Response(JPEG, { headers: { "content-type": "image/jpeg" } });
+  const q = (url.searchParams.get("gsrsearch") ?? "").replace(" filetype:bitmap", "");
+  if (q === "nothing") return Response.json({});
+  const slug = encodeURIComponent(q.replace(/\s+/g, "_"));
+  return Response.json({ query: { pages: [{ title: `File:${q}.jpg`, index: 1, imageinfo: [{ mime: "image/jpeg", thumburl: `https://upload.wikimedia.org/x/960px-${slug}.jpg`, descriptionurl: `https://commons.wikimedia.org/wiki/File:${slug}`, extmetadata: { Artist: { value: "Ugo Foto" }, LicenseShortName: { value: "CC BY 4.0" } } }] }] } });
+}) as typeof fetch;
 
 describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
   let db: Db;
@@ -28,10 +41,10 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
 
   before(async () => {
     db = createPool(url!);
-    await db.query("drop table if exists attempts, items, sessions cascade");
+    await db.query("drop table if exists pictures, attempts, items, sessions cascade");
     await migrate(db);
     await migrate(db); // idempotent
-    const app = createApp(new Store(db, TZ), TOKEN);
+    const app = createApp(new Store(db, TZ), TOKEN, new Pictures({ fetch: fakePhotos }));
     http = await new Promise((resolve) => {
       const s = app.listen(0, () => resolve(s));
     });
@@ -83,6 +96,7 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
   test("a full session: capture, drill, timer, summary", async () => {
     const s = await call("start_session", { limit_min: 10 });
     assert.equal(s.due_count, 0);
+    assert.deepEqual(s.conversation_words, []);
     assert.equal(s.minutes_left, 10);
     const sid = s.session_id;
 
@@ -121,10 +135,12 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.equal(word.held_for_sentence_mode, 1);
     assert.equal(word.due_total, 3);
     assert.equal(word.items[0].new, true);
-    // The context (which contains the answer) is kept apart from the prompt.
+    // The context (which contains the answer) is never sent with a due item; the note travels apart.
     const tragitto = word.items.find((i: { italian: string }) => i.italian === "tragitto");
     assert.equal(tragitto.context, undefined);
-    assert.equal(tragitto.after_answer.context, "what does tragitto mean");
+    assert.equal(tragitto.after_answer, undefined);
+    const screen = word.items.find((i: { italian: string }) => i.italian === "lo schermo");
+    assert.deepEqual(screen.after_answer, { note: "masculine" });
     const sentence = await call("get_due_items", { mode: "sentence", limit: 10 });
     assert.equal(sentence.items.length, 3);
 
@@ -195,9 +211,27 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     const one = await call("start_session", { limit_min: 5 });
     const two = await call("start_session", {});
     assert.notEqual(one.session_id, two.session_id);
+    // Recently learned words from the previous test come back for free conversation.
+    assert.deepEqual(
+      two.conversation_words.map((w: { italian: string }) => w.italian).sort(),
+      ["lo schermo", "su una pista ciclabile di città", "tragitto"],
+    );
+    assert.deepEqual(
+      two.conversation_words.find((w: { italian: string }) => w.italian === "tragitto"),
+      { italian: "tragitto", english: "commute" },
+    );
     assert.equal(two.minutes_left, undefined);
     const { rows } = await db.query("select ended_at from sessions where id = $1", [one.session_id]);
     assert.notEqual(rows[0].ended_at, null);
+
+    // Mature words are left out of conversation.
+    await db.query("update items set interval_days = 30 where italian = 'lo schermo'");
+    const three = await call("start_session", {});
+    assert.deepEqual(
+      three.conversation_words.map((w: { italian: string }) => w.italian).sort(),
+      ["su una pista ciclabile di città", "tragitto"],
+    );
+    await db.query("update items set interval_days = 1 where italian = 'lo schermo'");
   });
 
   test("stats page: token-guarded, renders data, escapes user text", async () => {
@@ -280,6 +314,167 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.equal(loc(res).get("msg"), "Added “sfasciare”.");
     res = await post(`${TOKEN}/new`, { italian: "x", english: "y", source: "bogus" });
     assert.match(loc(res).get("err") ?? "", /unknown source/);
+  });
+
+  test("widget: token-guarded, failed words first, data safe inside the page", async () => {
+    assert.equal((await fetch(`${base}/widget/wrong-token`)).status, 404);
+    assert.equal((await fetch(`${base}/widget/wrong-token/data`)).status, 404);
+
+    const res = await fetch(`${base}/widget/${TOKEN}/data?n=3`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const data = await res.json();
+    assert.equal(data.words.length, 3);
+    assert.equal(data.streak, 1);
+    assert.equal(data.words[0].italian, "su una pista ciclabile di città", "the failed word leads");
+    assert.equal(data.words[0].fails, 1);
+    assert.equal(data.words[0].last_wrong, "in una pista ciclabile");
+
+    // Mature words drop out of the rotation unless due.
+    await db.query("update items set interval_days = 30, due_on = current_date + 30 where italian = 'tragitto'");
+    const all = await (await fetch(`${base}/widget/${TOKEN}/data?n=50`)).json();
+    assert.ok(!all.words.some((w: { italian: string }) => w.italian === "tragitto"));
+
+    const page = await fetch(`${base}/widget/${TOKEN}?every=5&n=99`);
+    assert.equal(page.headers.get("referrer-policy"), "no-referrer");
+    const html = await page.text();
+    assert.match(html, /EVERY = 10000/, "every is clamped to 10 s");
+    assert.match(html, /data\?n=50/, "n is clamped to 50");
+    // la pellicola's context holds a <script> tag; inside the JSON block it must stay inert.
+    assert.ok(html.includes("\\u003cscript>alert(1)\\u003c/script>"));
+    assert.ok(!html.includes("<script>alert(1)"));
+  });
+
+  test("drill page: due items, grading on the screen, no voice session", async () => {
+    assert.equal((await fetch(`${base}/drill/wrong-token`)).status, 404);
+    const store = new Store(db, TZ);
+    const { item } = await store.captureItem({ italian: "la ciotola", english: "the bowl", context: "</script><b>x</b> la ciotola", source: "asked" });
+    const open = await call("start_session", {});
+
+    const d = await store.drillItems();
+    const it = d.items.find((i) => i.id === item.id)!;
+    assert.ok(it, "captured item is due");
+    assert.equal(it.new, true);
+    assert.deepEqual(it.preview, [1, 1, 1, 1, 1, 1], "a new item comes back tomorrow whatever the grade");
+    assert.equal(d.due, d.items.length);
+
+    const res = await fetch(`${base}/drill/${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const html = await res.text();
+    assert.match(html, /la ciotola/);
+    assert.ok(!html.includes("</script><b>"), "item text can't close the data script");
+
+    const grade = (body: unknown, token = TOKEN) =>
+      fetch(`${base}/drill/${token}/grade`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    assert.equal((await grade({ id: item.id, grade: 4 }, "wrong-token")).status, 404);
+    assert.equal((await grade({ id: item.id, grade: 7 })).status, 400);
+    assert.equal((await grade({ id: 999999, grade: 3 })).status, 400);
+
+    const r = await grade({ id: item.id, grade: 4, answer: "la ciotola" });
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    assert.equal(body.passed, true);
+    assert.equal(body.interval_days, 1);
+    const { rows } = await db.query("select mode, prompt, answer, session_id from attempts where item_id = $1", [item.id]);
+    assert.deepEqual(rows, [{ mode: "screen", prompt: "the bowl", answer: "la ciotola", session_id: null }], "not attached to the open voice session");
+    assert.ok(!(await store.drillItems()).items.some((i) => i.id === item.id), "graded item is no longer due");
+    await call("end_session", { session_id: open.session_id });
+  });
+
+  test("poster page: the most forgotten words first, token-guarded", async () => {
+    assert.equal((await fetch(`${base}/poster/wrong-token`)).status, 404);
+    const store = new Store(db, TZ);
+    const easy = (await store.captureItem({ italian: "facile", english: "easy", source: "asked" })).item.id;
+    const hard = (await store.captureItem({ italian: "difficilissimo", english: "very hard", source: "asked" })).item.id;
+    await store.recordAttempt({ item_id: easy, mode: "screen", answer: "", grade: 5, fillers: 0 });
+    for (const grade of [1, 0, 4, 1]) await store.recordAttempt({ item_id: hard, mode: "screen", answer: "", grade, fillers: 0 });
+
+    const { words } = await store.forgettable(50);
+    assert.equal(words[0].italian, "difficilissimo");
+    assert.equal(words[0].lapses, 3);
+    assert.deepEqual(words[0].grades, [1, 0, 4, 1], "history oldest first");
+    assert.ok(!words.some((w) => w.italian === "facile"), "a word never forgotten, ease intact, is left off");
+
+    const res = await fetch(`${base}/poster/${TOKEN}?layout=cards&n=8&size=a3`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const html = await res.text();
+    assert.match(html, /difficilissimo/);
+    assert.match(html, /class="sheet cards"/);
+  });
+
+  test("photos: search and choose on the Words page, fill the poster, serve, remove", async () => {
+    const store = new Store(db, TZ);
+    const id = (await store.searchItems("difficilissimo")).items[0].id;
+
+    // Search: the query defaults to the English meaning; candidates carry a credit.
+    let page = await (await fetch(`${base}/items/${TOKEN}?q=difficilissimo&photos=${id}`)).text();
+    assert.match(page, /name="pq" value="very hard"/);
+    assert.match(page, /960px-very_hard\.jpg/);
+    assert.match(page, /Ugo Foto \/ Wikimedia Commons, CC BY 4.0/);
+    const cand = page.match(/name="cand" value="([^"]+)"/)![1].replace(/&quot;/g, '"').replace(/&amp;/g, "&");
+    page = await (await fetch(`${base}/items/${TOKEN}?q=difficilissimo&photos=${id}&pq=nothing`)).text();
+    assert.match(page, /Nothing found for “nothing”/);
+
+    // Choose it: downloaded and stored.
+    const post = (body: Record<string, string>) =>
+      fetch(`${base}/items/${TOKEN}/${id}`, { method: "POST", body: new URLSearchParams({ q: "", filter: "all", ...body }), redirect: "manual" });
+    let res = await post({ action: "photo", cand, pq: "very hard" });
+    assert.match(res.headers.get("location") ?? "", /msg=Photo\+saved/);
+    const saved = (await db.query("select mime, source, author, license, query, length(data)::int as n from pictures where item_id = $1", [id])).rows[0];
+    assert.deepEqual(saved, { mime: "image/jpeg", source: "wikimedia", author: "Ugo Foto", license: "CC BY 4.0", query: "very hard", n: JPEG.length });
+    res = await post({ action: "photo", cand: JSON.stringify({ source: "pexels", full: "http://127.0.0.1/secret" }) });
+    assert.match(new URL(res.headers.get("location")!, base).searchParams.get("err") ?? "", /bad photo choice/);
+
+    // Served behind the token, with its type.
+    const pic = await fetch(`${base}/pic/${TOKEN}/${id}?v=1`);
+    assert.equal(pic.status, 200);
+    assert.equal(pic.headers.get("content-type"), "image/jpeg");
+    assert.deepEqual(Buffer.from(await pic.arrayBuffer()), JPEG);
+    assert.equal((await fetch(`${base}/pic/wrong-token/${id}`)).status, 404);
+    assert.equal((await fetch(`${base}/pic/${TOKEN}/999999`)).status, 404);
+
+    // The poster shows it with its credit, and fills in the rest on request.
+    page = await (await fetch(`${base}/poster/${TOKEN}?layout=pictures&n=24`)).text();
+    assert.match(page, new RegExp(`/pic/${TOKEN}/${id}\\?v=\\d+`));
+    assert.match(page, /Ugo Foto \/ Wikimedia Commons, CC BY 4.0/);
+    const missing = (await store.forgettable(24)).words.filter((w) => w.pic === null).length;
+    assert.ok(missing > 0);
+    res = await fetch(`${base}/poster/${TOKEN}/photos`, { method: "POST", body: new URLSearchParams({ layout: "pictures", n: "24", size: "a4", ink: "color" }), redirect: "manual" });
+    const back = new URL(res.headers.get("location")!, base);
+    assert.equal(back.searchParams.get("layout"), "pictures");
+    assert.equal(back.searchParams.get("msg"), `Added ${missing} ${missing === 1 ? "photo" : "photos"}.`);
+    assert.equal((await store.forgettable(24)).words.filter((w) => w.pic === null).length, 0);
+
+    // Remove it again.
+    await post({ action: "nophoto" });
+    assert.equal((await db.query("select 1 from pictures where item_id = $1", [id])).rowCount, 0);
+  });
+
+  test("drill word list: bearer only, due first, short items only, no grading", async () => {
+    const store = new Store(db, TZ);
+    await store.captureItem({ italian: "il semaforo", english: "the traffic light", source: "asked" });
+    await store.captureItem({ italian: "non me lo sarei mai aspettato davvero", english: "I'd never have expected it", source: "error" });
+    await db.query(`update items set due_on = current_date + 30 where italian = 'tragitto'`);
+    const get = (qs = "", auth = `Bearer ${TOKEN}`) => fetch(`${base}/api/drill${qs}`, { headers: { authorization: auth } });
+
+    assert.equal((await get("", "Bearer nope")).status, 401);
+    const res = await get("?limit=100");
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const { items, due } = (await res.json()) as { items: { italian: string; english: string; due: boolean }[]; due: number };
+    const names = items.map((i) => i.italian);
+    assert.ok(names.includes("il semaforo"));
+    assert.ok(names.includes("tragitto"), "not-due items top up the list");
+    assert.ok(!names.some((n) => n.split(" ").length > 4), "long items wait for sentence mode");
+    assert.equal(due, items.filter((i) => i.due).length);
+    assert.equal(items.find((i) => i.italian === "tragitto")?.due, false);
+
+    const one = (await (await get("?limit=1")).json()) as { items: { due: boolean }[] };
+    assert.equal(one.items.length, 1);
+    assert.equal(one.items[0].due, true, "due items are picked before others");
+    assert.equal((await db.query("select 1 from attempts a join items i on i.id = a.item_id where i.italian = 'il semaforo'")).rowCount, 0);
   });
 
   test("errors come back as tool errors, not crashes", async () => {

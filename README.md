@@ -17,7 +17,7 @@ It is a remote MCP server over Streamable HTTP, written in TypeScript, backed by
 
 | Tool | Input | Returns |
 |---|---|---|
-| `start_session` | `limit_min?` | `session_id`, `due_count`, `due_word_mode`, `minutes_left` |
+| `start_session` | `limit_min?` | `session_id`, `due_count`, `due_word_mode`, `minutes_left`, `conversation_words` |
 | `capture_item` | `italian`, `english`, `note?`, `context?`, `source` | the item and `captured` or `recaptured` |
 | `get_due_items` | `mode`, `limit?` (10) | due items by `due_on`, then lowest ease |
 | `record_attempt` | `item_id`, `session_id?`, `mode`, `prompt?`, `answer`, `grade`, `fillers` | applied `grade`, `interval_days`, `due_on` |
@@ -44,6 +44,47 @@ The model assigns the quality from the transcript. The server applies SM-2:
 - **Pass (q ≥ 3):** the interval goes 1 day, then 6, then the previous interval × ease.
 - **Fail (q < 3):** repetitions reset and the interval drops to 1 day.
 - **Ease:** updated by the standard SM-2 formula on every answer and floored at 1.3. The new interval uses the updated ease, so a low pass grows more slowly.
+
+## Drill page
+
+`https://<host>/drill/<MCP_TOKEN>` is a review on the screen in the style of SuperMemo 98, for when you can look at a phone or a desktop instead of talking. It's linked from the other two pages.
+
+- **One word at a time:** the English prompt is shown; recall the Italian, then **Show answer** (Space or Enter). The answer appears with its note and context sentence, with the word marked in the sentence.
+- **Grade yourself 0–5**, with SuperMemo's labels: Null (blackout), Bad, Fail, Pass, Good, Bright (instant). Keys `0`–`5` work too. Each button shows the interval that grade would give.
+- **Same scheduling:** grades go through the same SM-2 step as the voice drill and are saved as they're given. They're stored with mode `screen`. They don't join an open voice session, and they're left out of the filler averages on the stats page.
+- **Final drill:** words graded below Good (4) come back after the main review, again and again until you grade them Good or Bright. As in SuperMemo, these repeats don't change the schedule and aren't stored.
+- **Type answers** (optional switch, remembered in the browser): type the Italian before showing the answer. The page tells you whether it matched, ignoring case and punctuation, and flags accent-only differences. It also suggests a grade.
+- **Summary:** pass rate, average grade, how the grades were spread, final drill repeats and time taken. With nothing due, it shows when the next words come.
+
+The design is a card with an Italian tricolour edge, in light and dark mode, and it works on phones. It's guarded by the same token and sent with the same private headers as the other pages. The page needs JavaScript; the other pages don't.
+
+## Poster page
+
+`https://<host>/poster/<MCP_TOKEN>` turns the words you forget most into something to print and put up at home. It's linked from the nav and from **Hardest words** on the stats page.
+
+- **Which words:** any word you've failed at least once, or whose ease has dropped. Each word's score adds up:
+  - 1 per lapse (an answer graded below 3);
+  - up to 2 more per lapse, the more recent it is (half-life of 30 days);
+  - 2 per point of ease lost.
+
+  So a word you keep forgetting lately ranks above one you used to forget.
+- **Poster:** one sheet titled *Le parole che scappano* ("the words that get away"). The top word is shown huge, the next three large, and the rest in a grid. Each word has its English, note and context sentence, with the word underlined in the sentence. Up to 12 words get three roomy columns; from 20 the small cards get one line of context.
+- **Picture wall:** twelve photo tiles to a sheet, each with the Italian on a band below the photo, the English and the answer history. Words without a photo get a large initial letter instead.
+- **Cut-out cards:** eight cards to a sheet with dashed cut lines, to stick on the fridge, the mirror or the front door. A word's photo runs along the top of its card.
+- **Photos:** the top word on the poster shows its photo too. **Find photos** fills in every word on the sheet that has none with the first match for its English meaning; open a word on the Words page to choose a better one. Photo credits are printed at the foot of each sheet, and in black-and-white mode the photos print in greyscale.
+- **Answer history on every word:** a row of squares, oldest first. A filled square is a lapse and a hollow one is a remembered answer. The difference is fill, not just colour, so it reads for colour-blind eyes and on a black-and-white printer too.
+- **Options:** 8 to 24 words; A4, A3 or US Letter (text scales with the paper); colour or black and white. Print it from the page, or save it as PDF from the print dialog. Each sheet fits exactly one page.
+
+## Photos
+
+Photos come from the internet and are stored in the database with the word (one per word), so a poster prints the same even if the photo is later removed from the site it came from.
+
+- **Pexels** (recommended): set `PEXELS_API_KEY` to a free key from [pexels.com/api](https://www.pexels.com/api/). Good everyday photos; the Pexels License allows free use, and the photographer is credited on the poster anyway.
+- **Wikimedia Commons**, used when there's no key: free, no sign-up, freely licensed images, but more museum pieces and diagrams than everyday photos. Most need a credit (CC BY, CC BY-SA), which the poster prints.
+
+The search uses the first English meaning without its article ("the commute, journey" → *commute*). For abstract words (*nonostante*, *a malapena*), photos of the meaning rarely work; search instead for something from the context sentence that will remind you of it (for *a malapena*, "foggy road").
+
+The server downloads only from the two image hosts (`images.pexels.com`, `upload.wikimedia.org`), only images, up to 5 MB each. Photos are served at `/pic/<MCP_TOKEN>/<id>`, behind the same token as the pages.
 
 ## Stats page
 
@@ -75,9 +116,16 @@ It uses the same token as the connector URL. A wrong token returns 404. The page
 - **Filters:** all words, due today, missing context, or ever failed.
 - **Editing:** tap a word to change its Italian, English, note, context or source; its learning progress is kept. **Make due today** restarts its learning. **Delete** removes it together with its answer history.
 - **Answer history:** each word shows its last 10 answers (time, prompt, answer, grade, fillers).
+- **Photo:** search the internet for a photo of the word and tap one to keep it (see [Photos](#photos)). It then shows on the poster, the cards and in the drill.
 - **Add a word:** adds a word by hand. An existing word isn't duplicated; it becomes due today again.
 
 Like the stats page, it's guarded by the token and sent with `no-store`, `no-referrer` and `noindex`.
+
+## Desktop widget
+
+`https://<host>/widget/<MCP_TOKEN>` is a small card that shows the hardest words one at a time, so you see them during the day between rides. Each word shows first and its answer appears after a pause, with the context sentence and what you said the last time you got it wrong. The card fetches fresh words from `/widget/<MCP_TOKEN>/data` every 10 minutes.
+
+On macOS, `desktop/macos/itamico.lua` pins the card at a fixed spot on screen with [Hammerspoon](https://www.hammerspoon.org): in a corner or at exact coordinates, above all windows or on the desktop. Setup and options are in [`desktop/macos/README.md`](desktop/macos/README.md).
 
 ## Decisions beyond the brief
 
@@ -86,6 +134,7 @@ These are things the requirements left open, or places where a small change made
 - **Case-insensitive uniqueness.** `items.italian` is unique on `lower(italian)`, so "Lo schermo" and "lo schermo" are one item. Captured text is tidied first: whitespace is collapsed, and wrapping quotes and trailing punctuation are dropped. Apostrophes are kept, so `un po'` survives.
 - **Re-capture.** Capturing an existing item updates its gloss and note, and resets it to due today with repetitions cleared. Its ease is kept. The **original context sentence is kept**, because the first context is the memorable one.
 - **`items.last_captured_at`.** This column was added to the schema. It is set on every capture or re-capture, and it is how `end_session` knows what was captured during the session.
+- **Due items carry no context.** `get_due_items` returns the prompt (`english`), the answer (`italian`) and the grammar note under `after_answer`, but never the context sentence. The context usually contains the answer, and the tutor kept weaving it into the question. It stays on the stats and Words pages.
 - **Word mode filters by length.** `get_due_items` in word mode returns only items of 4 words or fewer: something you can say in one breath while riding. Longer corrections wait for sentence mode, and `held_for_sentence_mode` tells the tutor how many are waiting.
 - **The server guards the hesitation rows.**
   - `record_attempt` counts filler tokens (eh, ehm, uh, um, mmm, hmm) in `answer` and uses whichever is larger: its own count or the model's.
@@ -98,6 +147,7 @@ These are things the requirements left open, or places where a small change made
   - `start_session` closes any session still open.
   - The clock ignores sessions older than 12 hours.
   - `minutes_left` is rounded **up**, so it reads 0 only once time has actually run out.
+- **Conversation words.** `start_session` returns up to 8 `conversation_words`: words captured or practised in the last 21 days that are not yet mature (interval under 21 days), picked at random from the 30 most recently captured. The tutor builds each free-conversation question so that answering it needs one of them, a different word and a different kind of question each time. The random pick keeps one session's questions from repeating the last one's.
 - **Dates use the user's time zone.** "Due today" is computed in `TUTOR_TZ` (default `Europe/Warsaw`), not in the server's or the database's zone.
 - **Small responses.** Responses are compact JSON with null fields dropped, because tokens are latency in a voice loop.
 - **Errors don't stop the conversation.** Errors come back as MCP tool errors with a short message, never as transport failures, so the conversation carries on.
@@ -120,7 +170,7 @@ You need two secrets:
 - `DATABASE_URL`: the connection string from step 1.
 - `MCP_TOKEN`: a long random string, e.g. `openssl rand -hex 24`.
 
-Optionally set `TUTOR_TZ`.
+Optionally set `TUTOR_TZ`, and `PEXELS_API_KEY` for word photos (see [Photos](#photos)). On your own server, pass it to the installer like the other settings (`sudo PEXELS_API_KEY=... ./deploy/install.sh`, or in `deploy/deploy.env`); on Fly.io, `fly secrets set PEXELS_API_KEY=...`.
 
 **Fly.io** (config included, region `fra`, one machine always on):
 
@@ -195,6 +245,40 @@ The server is unchanged. Point the realtime session at the same endpoint:
 
 The server also sends a short version of the tutor rules as MCP `instructions` on initialize, for clients that surface them.
 
+## Android drill player (Android Auto)
+
+`android/` is a small Android app that drills your words without Claude. A synthesized voice reads each word: the prompt, a pause for you to answer out loud, then the answer. There is no grading, and nothing is written back to the server.
+
+- **Words:** the server picks them (`GET /api/drill`, below). Due words come first, then the ones due soonest, up to the number you set. Only short items (4 words or fewer, as in word mode) are used, and the pick is shuffled. The last list is kept on the phone, so a drill still starts without signal.
+- **Order:** English → pause → Italian (recall, the default), Italian → pause → English, or Italian → pause (listen and repeat).
+- **Pause:** 5 seconds by default, counted from the end of the prompt. A further 1.5 s follows the answer before the next word.
+- **In the car:** it is a media app, so it appears in Android Auto's media apps.
+  - Play/pause: pause or resume. Resuming repeats the current word from its prompt.
+  - Next: skip the word.
+  - Previous: hear the word again, or go back one if it has only just started.
+  - The screen shows the prompt and the position (e.g. 3 / 20), plus the answer once it has been said.
+  - A navigation prompt or a call pauses the drill, and it resumes afterwards.
+- **On the phone** (bike, headphones): the same controls are in the app and in the media notification. Disconnecting headphones or the car pauses it.
+- **Voices:** it uses the phone's text-to-speech engine (Google's, normally). Italian and English voices must be installed: **Settings → Text-to-speech output → Install voice data**. The speech rate is set there too.
+
+### Install
+
+1. **Get the APK.**
+   - **From CI:** every push builds it. Open the **ci** workflow run in GitHub Actions and download the `itamico-drill-apk` artifact.
+   - **Build it yourself:** run `cd android && ./gradlew assembleDebug` (needs the Android SDK). Or open `android/` in Android Studio and press Run.
+2. **Install it on the phone.** Open the APK file, or run `adb install -r app-debug.apk`.
+3. **Set it up.** Open **Itamico Drill**, paste the same connector URL as in Claude (`https://<host>/mcp/<MCP_TOKEN>`) and tap **Test connection**.
+4. **Make it visible in Android Auto.** Android Auto only lists apps from the Play Store until you allow others. Do this once on the phone:
+   1. Open Android Auto's settings and tap **Version** about 10 times to unlock developer mode.
+   2. In ⋮ → **Developer settings**, tick **Unknown sources**.
+   3. Re-check this setting after an Android Auto update.
+
+The debug key is checked in (`android/app/debug.keystore`, standard `android` passwords) so that CI and local builds install over each other. It is not a secret. Don't use it for anything you publish.
+
+### `GET /api/drill`
+
+`Authorization: Bearer <MCP_TOKEN>`, optional `?limit=` (1–100, default 20). It returns `{"items": [{"id", "italian", "english", "due"}], "due": <how many are due>}`.
+
 ## Caveats
 
 - **Fillers depend on the transcript.** Filler detection only sees what speech-to-text writes, and many recognisers drop "eh/ehm". If the transcripts come through clean, hesitation grading will be too generous. That is a property of the voice layer, not of this server. Realtime APIs with raw transcripts are better here.
@@ -221,6 +305,14 @@ src/app.ts       Express app, auth, stateless Streamable HTTP endpoint
 src/tools.ts     MCP tool definitions (descriptions double as tutor guidance)
 src/store.ts     sessions/timer, capture, due items, attempts
 src/grading.ts   SM-2, filler counting, grade capping
+src/drill.ts     the Drill page (/drill/<token>)
+src/stats.ts     the stats page (/stats/<token>)
+src/items.ts     the Words page (/items/<token>)
+src/poster.ts    the printable poster (/poster/<token>)
+src/pictures.ts  photo search and download (Pexels, Wikimedia Commons)
+src/widget.ts    desktop widget page and its data
+desktop/macos/   Hammerspoon script that pins the widget on screen
 sql/schema.sql   schema
 tutor/project-instructions.md   Claude Project custom instructions
+android/         drill player app for the phone and Android Auto (Java, no dependencies)
 ```
