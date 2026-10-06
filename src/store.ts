@@ -7,6 +7,7 @@ import { today } from "./db.js";
 import { capGrade, countFillers, sm2 } from "./grading.js";
 import type { Candidate, Photo } from "./pictures.js";
 import { loadStats } from "./stats.js";
+import { loadWidget } from "./widget.js";
 
 export type Mode = "word" | "sentence";
 /** Voice modes, plus "screen" for answers graded on the drill page. */
@@ -509,6 +510,10 @@ export class Store {
 
   stats() {
     return loadStats(this.db, this.timeZone);
+  }
+
+  widget(limit?: number) {
+    return loadWidget(this.db, this.timeZone, limit);
   }
 
   // ----------------------------------------------------------------- helpers
