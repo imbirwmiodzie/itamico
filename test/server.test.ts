@@ -315,6 +315,28 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     await call("end_session", { session_id: open.session_id });
   });
 
+  test("poster page: the most forgotten words first, token-guarded", async () => {
+    assert.equal((await fetch(`${base}/poster/wrong-token`)).status, 404);
+    const store = new Store(db, TZ);
+    const easy = (await store.captureItem({ italian: "facile", english: "easy", source: "asked" })).item.id;
+    const hard = (await store.captureItem({ italian: "difficilissimo", english: "very hard", source: "asked" })).item.id;
+    await store.recordAttempt({ item_id: easy, mode: "screen", answer: "", grade: 5, fillers: 0 });
+    for (const grade of [1, 0, 4, 1]) await store.recordAttempt({ item_id: hard, mode: "screen", answer: "", grade, fillers: 0 });
+
+    const { words } = await store.forgettable(50);
+    assert.equal(words[0].italian, "difficilissimo");
+    assert.equal(words[0].lapses, 3);
+    assert.deepEqual(words[0].grades, [1, 0, 4, 1], "history oldest first");
+    assert.ok(!words.some((w) => w.italian === "facile"), "a word never forgotten, ease intact, is left off");
+
+    const res = await fetch(`${base}/poster/${TOKEN}?layout=cards&n=8&size=a3`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const html = await res.text();
+    assert.match(html, /difficilissimo/);
+    assert.match(html, /class="sheet cards"/);
+  });
+
   test("errors come back as tool errors, not crashes", async () => {
     const r = await call("record_attempt", { item_id: 999999, mode: "word", answer: "x", grade: 5, fillers: 0 });
     assert.equal(r._isError, true);

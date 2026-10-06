@@ -49,6 +49,21 @@ export interface Clock {
   time_up?: true;
 }
 
+export interface ForgettableWord {
+  id: number;
+  italian: string;
+  english: string;
+  note: string | null;
+  context: string | null;
+  ease: number;
+  attempts: number;
+  lapses: number;
+  last_lapse: string | null;
+  /** Grades 0..5, oldest first. */
+  grades: number[];
+  score: number;
+}
+
 export class TutorError extends Error {}
 
 export class Store {
@@ -406,6 +421,35 @@ export class Store {
     const { rows } = await this.db.query(`delete from items where id = $1 returning italian`, [id]);
     if (!rows[0]) throw new TutorError(`item ${id} not found`);
     return rows[0].italian as string;
+  }
+
+  /**
+   * The words you forget most, for the printable poster. A word qualifies once
+   * it has been failed or its ease has dropped. Score: every lapse counts 1,
+   * plus up to 2 more the more recent it is (half-life 30 days), plus 2 per
+   * point of ease lost. `grades` is the answer history, oldest first (last 12).
+   */
+  async forgettable(limit = 16) {
+    const { rows } = await this.db.query(
+      `select i.id::int as id, i.italian, i.english, i.note, i.context, round(i.ease::numeric, 2)::float as ease,
+              count(a.id)::int as attempts,
+              count(a.id) filter (where a.grade < 3)::int as lapses,
+              to_char(max(a.at) filter (where a.grade < 3) at time zone $2, 'YYYY-MM-DD') as last_lapse,
+              (array_agg(a.grade order by a.at desc))[1:12] as grades,
+              round((count(a.id) filter (where a.grade < 3)
+                + 2 * coalesce(sum(power(0.5, extract(epoch from now() - a.at)::float / 86400 / 30)) filter (where a.grade < 3), 0)
+                + 2 * greatest(0, 2.5 - i.ease))::numeric, 2)::float as score
+         from items i join attempts a on a.item_id = i.id
+        group by i.id
+       having count(a.id) filter (where a.grade < 3) > 0 or i.ease < 2.5
+        order by score desc, i.ease, lower(i.italian)
+        limit $1`,
+      [limit, this.timeZone],
+    );
+    return {
+      today: this.today(),
+      words: rows.map((r) => ({ ...r, grades: (r.grades as number[]).reverse() })) as ForgettableWord[],
+    };
   }
 
   stats() {

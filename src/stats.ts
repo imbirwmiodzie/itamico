@@ -355,7 +355,7 @@ ${both((W) => forecastChart(s.forecast, W))}
 <details><summary>Table</summary><div class="scroll">${table(["Day", "Due"], s.forecast.map((d) => [d.day, d.count]))}</div></details>
 </section>
 
-<section class="card"><h2>Hardest words</h2><p class="sub">Most failed answers, then lowest ease.</p>
+<section class="card"><h2>Hardest words</h2><p class="sub">Most failed answers, then lowest ease. <a href="/poster/${esc(encodeURIComponent(token))}">Print them as a poster</a></p>
 ${s.hardest.length ? `<div class="scroll">${table(["Italian", "English", "Fails", "Answers", "Ease", "Last"], s.hardest.map((h) => [h.italian, h.english, h.fails, h.attempts, h.ease.toFixed(2), h.last]), "words", [3, 4, 5])}</div>` : `<p class="muted">No failed answers yet.</p>`}
 </section>
 

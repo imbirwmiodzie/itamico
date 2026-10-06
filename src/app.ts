@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { renderDrill } from "./drill.js";
 import { renderItems } from "./items.js";
 import { PRIVATE_HEADERS } from "./page.js";
+import { posterOptions, renderPoster } from "./poster.js";
 import { type ItemFilter, SOURCES, type Store, TutorError } from "./store.js";
 import { renderStats } from "./stats.js";
 import { buildServer } from "./tools.js";
@@ -99,6 +100,15 @@ export function createApp(store: Store, token: string) {
       res.status(e instanceof TutorError ? 400 : 500).json({ error: e instanceof TutorError ? e.message : "could not save" });
     }
   });
+
+  app.get(
+    "/poster/:token",
+    auth,
+    page(async (req) => {
+      const o = posterOptions(req.query);
+      return renderPoster(req.params.token as string, o, await store.forgettable(o.n));
+    }),
+  );
 
   app.get("/stats/:token", auth, page(async (req) => renderStats(await store.stats(), req.params.token as string)));
 

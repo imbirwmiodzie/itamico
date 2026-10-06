@@ -58,6 +58,21 @@ The model assigns the quality from the transcript. The server applies SM-2:
 
 The design is a card with an Italian tricolour edge, in light and dark mode, and it works on phones. It's guarded by the same token and sent with the same private headers as the other pages. The page needs JavaScript; the other pages don't.
 
+## Poster page
+
+`https://<host>/poster/<MCP_TOKEN>` turns the words you forget most into something to print and put up at home. It's linked from the nav and from **Hardest words** on the stats page.
+
+- **Which words:** any word you've failed at least once, or whose ease has dropped. Each word's score adds up:
+  - 1 per lapse (an answer graded below 3);
+  - up to 2 more per lapse, the more recent it is (half-life of 30 days);
+  - 2 per point of ease lost.
+
+  So a word you keep forgetting lately ranks above one you used to forget.
+- **Poster:** one sheet titled *Le parole che scappano* ("the words that get away"). The top word is shown huge, the next three large, and the rest in a grid. Each word has its English, note and context sentence, with the word underlined in the sentence. Up to 12 words get three roomy columns; from 20 the small cards get one line of context.
+- **Cut-out cards:** eight cards to a sheet with dashed cut lines, to stick on the fridge, the mirror or the front door.
+- **Answer history on every word:** a row of squares, oldest first. A filled square is a lapse and a hollow one is a remembered answer. The difference is fill, not just colour, so it reads for colour-blind eyes and on a black-and-white printer too.
+- **Options:** 8 to 24 words; A4, A3 or US Letter (text scales with the paper); colour or black and white. Print it from the page, or save it as PDF from the print dialog. Each sheet fits exactly one page.
+
 ## Stats page
 
 `https://<host>/stats/<MCP_TOKEN>` is a progress page for a browser, built for phones and desktops in light and dark mode. It shows:
@@ -232,6 +247,7 @@ src/grading.ts   SM-2, filler counting, grade capping
 src/drill.ts     the Drill page (/drill/<token>)
 src/stats.ts     the stats page (/stats/<token>)
 src/items.ts     the Words page (/items/<token>)
+src/poster.ts    the printable poster (/poster/<token>)
 sql/schema.sql   schema
 tutor/project-instructions.md   Claude Project custom instructions
 ```
