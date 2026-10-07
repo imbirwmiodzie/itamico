@@ -1,5 +1,5 @@
-// Shared pieces of the browser pages (drill, game, grammar, stats, words and poster): theme tokens,
-// base styles, escaping and the navigation between them.
+// Shared pieces of the browser pages (drill, game, grammar, palazzo, case, stats, words, poster and
+// atlas): theme tokens, base styles, escaping, the hover tooltip and the navigation between them.
 
 export const esc = (v: unknown) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -31,9 +31,37 @@ nav a{color:var(--ink2);text-decoration:none;padding-bottom:2px}
 nav a[aria-current]{color:var(--ink);font-weight:600;border-bottom:2px solid var(--s1)}
 `;
 
-export function nav(token: string, active: "drill" | "game" | "grammar" | "case" | "stats" | "items" | "poster"): string {
+export function nav(token: string, active: "drill" | "game" | "grammar" | "palazzo" | "case" | "stats" | "items" | "atlas" | "poster"): string {
   const t = encodeURIComponent(token);
   const link = (key: string, href: string, label: string) =>
     `<a href="${href}"${key === active ? ' aria-current="page"' : ""}>${label}</a>`;
-  return `<nav>${link("drill", `/drill/${t}`, "Drill")}${link("game", `/game/${t}`, "Game")}${link("grammar", `/grammar/${t}`, "Grammar")}${link("case", `/case/${t}`, "Il Caso")}${link("stats", `/stats/${t}`, "Progress")}${link("items", `/items/${t}`, "Words")}${link("poster", `/poster/${t}`, "Poster")}</nav>`;
+  return `<nav>${link("drill", `/drill/${t}`, "Drill")}${link("game", `/game/${t}`, "Game")}${link("grammar", `/grammar/${t}`, "Grammar")}${link("palazzo", `/palazzo/${t}`, "Palazzo")}${link("case", `/case/${t}`, "Il Caso")}${link("stats", `/stats/${t}`, "Progress")}${link("items", `/items/${t}`, "Words")}${link("atlas", `/atlas/${t}`, "Atlas")}${link("poster", `/poster/${t}`, "Poster")}</nav>`;
 }
+
+/** The hover/focus tooltip for elements with data-tip="head|bold|more|…". */
+export const TIP_CSS = `#tip{position:fixed;pointer-events:none;background:var(--surface);color:var(--ink);border:1px solid var(--ring);border-radius:8px;padding:6px 10px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.12);display:none;z-index:9}
+#tip b{display:block;font-size:13px}`;
+
+export const TIP_HTML = `<div id="tip" role="status"></div>
+<script>
+(() => {
+  const tip = document.getElementById("tip");
+  const show = (el, x, y) => {
+    const [head, ...rest] = el.dataset.tip.split("|");
+    tip.replaceChildren();
+    const b = document.createElement("b"); b.textContent = rest.length ? rest[0] : head; tip.append(b);
+    for (const line of rest.length ? [head, ...rest.slice(1)] : []) { const d = document.createElement("div"); d.textContent = line; tip.append(d); }
+    tip.style.display = "block";
+    const r = tip.getBoundingClientRect();
+    tip.style.left = Math.min(window.innerWidth - r.width - 8, Math.max(8, x + 12)) + "px";
+    tip.style.top = Math.max(8, y - r.height - 12) + "px";
+  };
+  const hide = () => { tip.style.display = "none"; };
+  document.querySelectorAll("[data-tip]").forEach((el) => {
+    el.addEventListener("pointermove", (e) => show(el, e.clientX, e.clientY));
+    el.addEventListener("pointerleave", hide);
+    el.addEventListener("focus", () => { const r = el.getBoundingClientRect(); show(el, r.left + r.width / 2, r.top); });
+    el.addEventListener("blur", hide);
+  });
+})();
+</script>`;

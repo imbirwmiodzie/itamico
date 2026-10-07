@@ -112,6 +112,36 @@ Picking from four is recognition, much easier than recalling a word, so the game
 - **Answers:** a typed answer with only an accent wrong counts, with a note (the accent buttons help on a desktop keyboard). After each answer the page shows the rule that applies. The end screen lists the misses, and the best score per lesson is remembered in the browser.
 - **The schedule is untouched:** knowing a word's plural isn't recalling the word, so practice here never changes when words are due.
 
+## Palazzo: a 3D memory palace
+
+`https://<host>/palazzo/<MCP_TOKEN>` is a building you walk through, first person, with your words in it. It works in a desktop browser and on a phone.
+
+- **The library:** every word is a book. The spines carry the Italian, reading from the bottom up as on Italian books. The books are shelved in alphabetical order of the noun, ignoring articles and accents (*la pellicola* stands under P), and each bookcase has a brass plate with its letters (*D – M*). So a word always stands in the same part of the room, the old memory-palace trick.
+- **Spine colours:** vellum for words not yet recalled, red for learning (under a week), green for young (1–3 weeks) and blue with extra gilt for mature (3+ weeks), as on the stats page. A tricolour ribbon marks a word due today. The other books on the shelves are plain and carry no words.
+- **The gallery:** behind the library, the hardest words that have a [photo](#photos) hang in gilt frames on red walls, up to 24, with the Italian on a plaque.
+- **Passeggiata** (walk): look at a book and its Italian appears; the meaning follows a moment later, so you can recall it first. Click or tap the book to open it: meaning, note, context sentence and stage, plus **Drill it today**.
+- **Caccia** (hunt): the page names 10 meanings in English, one at a time, weighted toward hard words as in Lampo. Find each one's book (or its painting) and click it. Since the shelves are alphabetical, the quick way is to recall the Italian and head for its letter. A wrong book costs 5 seconds and shows what that book means. **Aiuto** (help) costs 10 seconds: a column of light marks the book and the map shows where it is. **Salta** (skip) costs 15 seconds and tells you the word. The end screen shows your time, your best time on this device, and the words you needed help with; **Drill these today** puts them in today's drill. Like Lampo, the hunt never changes the schedule on its own.
+- **Controls:** W A S D or the arrow keys to walk, Shift to run, the mouse to look (click once to capture it; Esc releases it and opens the menu). On a phone, the left thumb walks with a joystick and the right thumb looks; tap a book to open it. M toggles the map.
+- **Size:** up to 300 words go on the shelves. With more, the ones due and hardest are kept. The library grows a pair of bookcases per 96 words.
+
+It is drawn with plain WebGL, with no library and nothing loaded from elsewhere. The lighting is baked into the geometry, the spines and plaques are drawn into canvas textures in the browser, and there's distance fog. Photos come from `/pic/<MCP_TOKEN>/<id>` like everywhere else. It's guarded by the same token and sent with the same private headers as the other pages.
+## Word atlas
+
+`https://<host>/atlas/<MCP_TOKEN>` draws the whole dictionary, every word you've captured, in four views (**Atlas** in the nav). The poster and the stats page show only the hardest words or your practice; this page shows the words themselves. It works on phones and desktops in light and dark mode. Hover or tap any word for its English, its next review and how often you've forgotten it.
+
+All four views use the same growth stages, set by a word's review interval: **seme** (seed: not recalled yet, or just forgotten), **germoglio** (sprout: 1 day), **piantina** (seedling: 2–6 days), **bocciolo** (bud: 1–3 weeks), **fiore** (flower: 3 weeks to 3 months) and **ulivo** (olive tree: 3 months or more).
+
+- **Cielo (sky):** every word is a star on a night-sky map. The distance from the sun is the review interval on a log scale, with orbits marked at 1 day, 1 week, 1 month and 3 months. New and just-forgotten words burn close to the sun; words you keep for months drift outward. A star's colour is its stage, its size is how often it's been answered, and it twinkles when it's due. Words that share a note (*feminine*, *verb -are*…) are grouped into named constellations joined by lines. Under the map, **Closest to the sun** lists the eight words nearest the sun. On a phone the star names are hidden because they'd be too small to read; tap a star instead.
+- **Giardino (garden):** every word is a plant drawn for its stage, from a seed in the soil to an olive tree, in beds from trees down to seeds. Each flower keeps its own colour. A plant 3 or more days overdue droops, turns brown and says *needs water*, with a link to the drill.
+- **Nuvola (cloud):** all the words at once. Size shows how often a word is forgotten (lapses, plus lost ease), or how often it's been answered, and colour shows its stage, warm for new and cool for well kept. **Show in English** switches the whole cloud to the meanings.
+- **Errori (mistakes):** what you actually said, set against the right word, letter by letter: the letters you said instead are struck out in red, and the ones you left out are in green (*~~la~~**il** problema*). Each wrong answer gets a label: *accento* (accent or capital only), *articolo* (the article), *desinenza* (the ending), *lettere* (a letter or two) or *altra parola* (a different word). A bar at the top shows which kind of slip you make most. Whole-sentence answers are quoted rather than diffed. Answers that match the word (graded low only for hesitation or a hint) aren't counted.
+
+### Screensaver
+
+`https://<host>/ambient/<MCP_TOKEN>` (**Screensaver** on the atlas page) is a full-screen slideshow for an idle screen, an old tablet or a TV. One word at a time fades in, large, over its photo, which drifts slowly. Without a photo, the word gets a soft colour glow. After a pause the English, the note and the context sentence appear, with the word in bold. A clock sits in the corner. It shows the words that haven't stuck yet (interval under three weeks, or due), due ones first, then the most forgotten, in a slightly different order on each visit.
+
+Click or press Space to show the answer, then again for the next word. **F** toggles full screen and **Esc** goes back to the atlas. Where the browser allows it, the page keeps the screen from sleeping. Options in the URL: `every` (seconds per word, default 20), `reveal` (seconds before the answer, default a third of `every`), `n` (how many words, default 30) and `side=english` to show the English first as a recall test, e.g. `/ambient/<MCP_TOKEN>?every=30&side=english`.
+
 ## Poster page
 
 `https://<host>/poster/<MCP_TOKEN>` turns the words you forget most into something to print and put up at home. It's linked from the nav and from **Hardest words** on the stats page.
@@ -362,10 +392,12 @@ src/grading.ts   SM-2, filler counting, grade capping
 src/drill.ts     the Drill page (/drill/<token>)
 src/game.ts      the Lampo game (/game/<token>) and its trap look-alikes
 src/grammar.ts   grammar lessons on your words (/grammar/<token>): articles, plurals, prepositions, verbs
+src/palazzo.ts   the Palazzo, a 3D library and gallery of the words (/palazzo/<token>)
 src/case.ts      Il Caso: case state for the tutor's tools, and the case board (/case/<token>)
 src/stats.ts     the stats page (/stats/<token>)
 src/items.ts     the Words page (/items/<token>)
 src/poster.ts    the printable poster (/poster/<token>)
+src/atlas.ts     the word atlas (/atlas/<token>) and the screensaver (/ambient/<token>)
 src/pictures.ts  photo search and download (Pexels, Wikimedia Commons)
 src/widget.ts    desktop widget page and its data
 desktop/macos/   Hammerspoon script that pins the widget on screen
