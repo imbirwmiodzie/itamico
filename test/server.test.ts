@@ -81,13 +81,14 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.equal((await fetch(`${base}/health`)).status, 200);
   });
 
-  test("lists the nine tools", async () => {
+  test("lists the ten tools", async () => {
     const { tools } = await client.listTools();
     assert.deepEqual(tools.map((t) => t.name).sort(), [
       "capture_item",
       "end_session",
       "get_case",
       "get_due_items",
+      "get_grammar",
       "list_items",
       "open_case",
       "record_attempt",
@@ -564,6 +565,18 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     const presente = await (await fetch(`${base}/grammar/${TOKEN}?l=presente`)).text();
     assert.match(presente, /spengo/);
     assert.match(await (await fetch(`${base}/grammar/${TOKEN}?l=nope`)).text(), /Grammatica/, "an unknown lesson shows the list");
+    const congiuntivo = await (await fetch(`${base}/grammar/${TOKEN}?l=congiuntivo`)).text();
+    assert.match(congiuntivo, /che io<\/th>/);
+    assert.match(congiuntivo, /spenga/);
+
+    // The same lessons by voice.
+    const topics = await call("get_grammar", {});
+    assert.equal(topics.topics.length, 28);
+    const round = await call("get_grammar", { topic: "plurale", limit: 30 });
+    assert.ok(round.exercises.some((e: { q: string; answers: string[] }) => e.q === "il cassetto" && e.answers[0] === "i cassetti"));
+    assert.ok(round.rules.length > 3);
+    const bad = await client.callTool({ name: "get_grammar", arguments: { topic: "nope" } }).catch(() => ({ isError: true }));
+    assert.equal(bad.isError, true, "an unknown topic is refused");
   });
 
   test("Il Caso: open a case, episodes follow memory, finale only when every clue is secured", async () => {

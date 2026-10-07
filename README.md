@@ -26,6 +26,7 @@ It is a remote MCP server over Streamable HTTP, written in TypeScript, backed by
 | `get_case` | none | the open [Il Caso](#il-caso-a-mystery-told-on-your-rides) mystery with clue progress and events, or candidate clues for a new one |
 | `open_case` | `title`, `premise`, `solution`, `clue_ids` (3–6) | the new case |
 | `save_episode` | `case_id`, `headline`, `story_so_far`, `outcome?` (`solved` / `dropped`) | episode number and clue progress |
+| `get_grammar` | `topic?`, `limit?` (10) | a [grammar lesson](#grammar-by-voice): its rules and exercises on your words; with no topic, the topics and how many of your words each can use |
 
 While a timed session is open, every response also carries `session_id` and `minutes_left`. When the limit passes, the response adds `time_up: true` and a one-line instruction to finish the current item and call `end_session`.
 
@@ -95,22 +96,37 @@ Picking from four is recognition, much easier than recalling a word, so the game
 
 ## Grammar page
 
-`https://<host>/grammar/<MCP_TOKEN>` has grammar lessons made from the words in your list. Each lesson explains its rules with your own nouns and verbs, lists every word of yours it fits with its forms, and ends with a 10-question practice round on those words.
+`https://<host>/grammar/<MCP_TOKEN>` has 28 grammar lessons made from the words in your list. Each lesson explains its rules with your own nouns, adjectives and verbs, lists every word of yours it fits with its forms, and ends with a 10-question practice round on those words. The same lessons can be practised by voice: ask the tutor (see [Grammar by voice](#grammar-by-voice)).
 
-| Lesson | Your words it uses | Practice |
-|---|---|---|
-| **Gli articoli**: il, lo, la, l', i, gli, le | nouns saved with their article | pick the article for *___ schermo* |
-| **Un, uno, una, un'** | singular nouns | pick the indefinite article |
-| **Il plurale** | singular nouns | type the plural, article included: *lo schermo* → *gli schermi* |
-| **Le preposizioni articolate** | nouns, singular and plural | pick the merged form: *in + lo schermo* → *nello schermo* |
-| **Il presente** | verbs | type the form: *(noi) cercare* → *cerchiamo* |
-| **Il passato prossimo** | verbs | type it: *(lei) alzarsi* → *si è alzata* |
+| Group | Lessons |
+|---|---|
+| Nomi e articoli | the definite article (*lo schermo*), the indefinite article (*uno schermo*), plurals with their article (*gli schermi*), *questo* and *quello* (*quello schermo*, *quegli schermi*), possessives (*il mio schermo*, *mia madre*) |
+| Aggettivi | agreement (*Giulia è stanca*, *Marco e Luca sono stanchi*), comparatives and superlatives (*più stanca di*, *la più stanca*, *stanchissima*, *migliore*) |
+| Preposizioni e pronomi | *di/a/da/in/su* + article (*nello schermo*), object pronouns (*lo cerco*, *l'ho cercato*, *glielo porto*), *ci* and *ne* (*ci penso*, *ne ho tre*), relative pronouns (*che*, *di cui*, *del quale*), *piacere* (*mi piacciono le chiavi*, *mi è piaciuta*) |
+| Presente e passato | the present, the passato prossimo, the imperfetto, passato prossimo or imperfetto (*Ieri…* / *Di solito…*), the passato remoto, the compound tenses (trapassato, futuro anteriore, condizionale passato, congiuntivo passato and trapassato) |
+| Futuro, modi e forme | the future, the conditional, the imperative (*cerca!*, *non cercare!*, *si alzi!*), the gerund with *stare* (*sto cercando*), the present subjunctive and when to use it (*penso che cerchi* / *so che cerca*), the imperfect subjunctive, if-sentences of all three kinds |
+| La frase | verbs + preposition before an infinitive (*smetto di*, *comincio a*, *voglio —*), the passive and *si* (*è cercato*, *viene cercato*, *si cerca*, *ci si alza*), negation (*non … mai/più/ancora*, *nessuno schermo*) |
 
-- **Which words count:** a noun counts when it's saved with its definite article (*lo schermo*, *l'amica*). A verb counts when it's saved as an infinitive and its English starts with "to" (or its note says verb). Phrases work too: *fare la spesa* → *faccio la spesa*, and reflexives get their pronouns (*alzarsi* → *mi alzo*).
+- **Which words count:**
+  - A noun counts when it's saved with its definite article (*lo schermo*, *l'amica*, *il telefono cellulare*). Whatever follows the noun is carried along where the noun stays singular. Nouns with an extra word are left out of plurals, because that word would have to agree.
+  - A verb counts when it's saved as an infinitive and its English starts with "to" (or its note says verb). Phrases work (*fare la spesa* → *faccio la spesa*, *ho fatto la spesa*), and reflexives get their pronouns (*alzarsi* → *mi alzo*, *alzati!*, *mi sto alzando*).
+  - An adjective counts when it's saved on its own (*stanco*, *felice*) with an English adjective, or a note that says adjective.
+- **Your words in fixed frames:** sentence lessons put your words into fixed frames. The subjunctive uses *Penso che (lui) ___ (cercare)* against *So che…*, if-sentences use *Se (io) ___ (cercare), sarebbe meglio*, the pronoun lesson uses *Porto lo schermo a Giulia* → *Glielo porto*, and so on.
 - **Rules with your words:** each rule lists the words of yours that follow it, such as *la targa → le targhe* under -ca → -che. A rule none of your words follows shows a stock example instead.
-- **No guessing:** a word joins a lesson only when its forms are certain. The page has tables of irregular verbs and plurals, *-isc-* verbs, verbs that take *essere*, and *-co*/*-go* nouns. Whatever falls outside those tables is left out rather than guessed: an *-ire* verb not known to take *-isc-* or not, an unknown *-ere* participle, a verb that takes either auxiliary, the gender of *l'ospedale*. An article that breaks the rules (*il pneumatico*) is left out too, so an exception is never taught as a rule.
-- **Answers:** a typed answer with only an accent wrong counts, with a note (the accent buttons help on a desktop keyboard). After each answer the page shows the rule that applies. The end screen lists the misses, and the best score per lesson is remembered in the browser.
+- **No guessing:** a word joins a lesson only when its forms are certain. `src/italian.ts` has rules for the regular forms and tables for:
+  - irregular verbs in every tense, and irregular plurals
+  - *-isc-* verbs, and verbs that take *essere*
+  - *-co*/*-go* nouns
+  - common English adjectives, used to recognise adjectives
+
+  Whatever falls outside those tables is left out of the lessons where it matters, rather than guessed. For example: an *-ire* verb not known to take *-isc-* or not, an *-ere* participle or passato remoto that isn't in the tables, a verb that takes either auxiliary, the gender of *l'ospedale*. An article that breaks the rules (*il pneumatico*) is left out too, so an exception is never taught as a rule.
+- **Two right answers:** where Italian allows two forms, both count: *va'* or *vai*, *credei* or *credetti*, *sono andato* or *sono andata* for io, *mi sto alzando* or *sto alzandomi*.
+- **Answers:** a typed answer with only an accent wrong counts, with a note (the accent buttons help on a desktop keyboard). A subject pronoun in front (*noi cerchiamo*) is fine. After each answer the page shows the whole sentence and the rule that applies. The end screen lists the misses, and the best score per lesson is remembered in the browser.
 - **The schedule is untouched:** knowing a word's plural isn't recalling the word, so practice here never changes when words are due.
+
+### Grammar by voice
+
+Ask the tutor to practise a topic (*"facciamo il congiuntivo"*, *"let's do plurals"*, *"ripassiamo i pronomi"*). It calls `get_grammar` with that topic, explains the rule in a sentence or two, and drills 10 exercises made from your words, one at a time. If it isn't clear which topic you mean, it gets the list and suggests one with many of your words. After each answer it says the right form or the whole sentence, and the rule if you got it wrong. Like the page, it never grades these answers or changes the schedule. When none of your words fit a topic yet, it explains the rule with examples of its own.
 
 ## Palazzo: a 3D memory palace
 
@@ -391,7 +407,9 @@ src/store.ts     sessions/timer, capture, due items, attempts
 src/grading.ts   SM-2, filler counting, grade capping
 src/drill.ts     the Drill page (/drill/<token>)
 src/game.ts      the Lampo game (/game/<token>) and its trap look-alikes
-src/grammar.ts   grammar lessons on your words (/grammar/<token>): articles, plurals, prepositions, verbs
+src/grammar.ts   the Grammar page (/grammar/<token>)
+src/lessons.ts   the 28 grammar lessons on your words, and get_grammar for the voice tutor
+src/italian.ts   Italian word forms: articles, plurals, adjectives, verbs in every tense
 src/palazzo.ts   the Palazzo, a 3D library and gallery of the words (/palazzo/<token>)
 src/case.ts      Il Caso: case state for the tutor's tools, and the case board (/case/<token>)
 src/stats.ts     the stats page (/stats/<token>)
