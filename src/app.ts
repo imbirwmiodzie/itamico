@@ -4,6 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { renderCase } from "./case.js";
 import { renderDrill } from "./drill.js";
 import { renderGame } from "./game.js";
+import { renderGrammar } from "./grammar.js";
 import { type ItemsView, renderItems } from "./items.js";
 import { PRIVATE_HEADERS } from "./page.js";
 import { PhotoError, Pictures, parseCandidate, photoQuery } from "./pictures.js";
@@ -149,6 +150,9 @@ export function createApp(store: Store, token: string, pictures: Pictures = new 
       res.status(e instanceof TutorError ? 400 : 500).json({ error: e instanceof TutorError ? e.message : "could not save" });
     }
   });
+
+  // Grammar lessons on your words: ?l=<lesson> opens one, otherwise the list.
+  app.get("/grammar/:token", auth, page(async (req) => renderGrammar(req.params.token as string, await store.grammarWords(), str(req.query.l))));
 
   app.get(
     "/poster/:token",

@@ -93,6 +93,25 @@ The tutor drives it with three tools: `get_case` (the open case, what changed si
 
 Picking from four is recognition, much easier than recalling a word, so the game never changes when words are due on its own.
 
+## Grammar page
+
+`https://<host>/grammar/<MCP_TOKEN>` has grammar lessons made from the words in your list. Each lesson explains its rules with your own nouns and verbs, lists every word of yours it fits with its forms, and ends with a 10-question practice round on those words.
+
+| Lesson | Your words it uses | Practice |
+|---|---|---|
+| **Gli articoli**: il, lo, la, l', i, gli, le | nouns saved with their article | pick the article for *___ schermo* |
+| **Un, uno, una, un'** | singular nouns | pick the indefinite article |
+| **Il plurale** | singular nouns | type the plural, article included: *lo schermo* → *gli schermi* |
+| **Le preposizioni articolate** | nouns, singular and plural | pick the merged form: *in + lo schermo* → *nello schermo* |
+| **Il presente** | verbs | type the form: *(noi) cercare* → *cerchiamo* |
+| **Il passato prossimo** | verbs | type it: *(lei) alzarsi* → *si è alzata* |
+
+- **Which words count:** a noun counts when it's saved with its definite article (*lo schermo*, *l'amica*). A verb counts when it's saved as an infinitive and its English starts with "to" (or its note says verb). Phrases work too: *fare la spesa* → *faccio la spesa*, and reflexives get their pronouns (*alzarsi* → *mi alzo*).
+- **Rules with your words:** each rule lists the words of yours that follow it, such as *la targa → le targhe* under -ca → -che. A rule none of your words follows shows a stock example instead.
+- **No guessing:** a word joins a lesson only when its forms are certain. The page has tables of irregular verbs and plurals, *-isc-* verbs, verbs that take *essere*, and *-co*/*-go* nouns. Whatever falls outside those tables is left out rather than guessed: an *-ire* verb not known to take *-isc-* or not, an unknown *-ere* participle, a verb that takes either auxiliary, the gender of *l'ospedale*. An article that breaks the rules (*il pneumatico*) is left out too, so an exception is never taught as a rule.
+- **Answers:** a typed answer with only an accent wrong counts, with a note (the accent buttons help on a desktop keyboard). After each answer the page shows the rule that applies. The end screen lists the misses, and the best score per lesson is remembered in the browser.
+- **The schedule is untouched:** knowing a word's plural isn't recalling the word, so practice here never changes when words are due.
+
 ## Poster page
 
 `https://<host>/poster/<MCP_TOKEN>` turns the words you forget most into something to print and put up at home. It's linked from the nav and from **Hardest words** on the stats page.
@@ -342,6 +361,7 @@ src/store.ts     sessions/timer, capture, due items, attempts
 src/grading.ts   SM-2, filler counting, grade capping
 src/drill.ts     the Drill page (/drill/<token>)
 src/game.ts      the Lampo game (/game/<token>) and its trap look-alikes
+src/grammar.ts   grammar lessons on your words (/grammar/<token>): articles, plurals, prepositions, verbs
 src/case.ts      Il Caso: case state for the tutor's tools, and the case board (/case/<token>)
 src/stats.ts     the stats page (/stats/<token>)
 src/items.ts     the Words page (/items/<token>)

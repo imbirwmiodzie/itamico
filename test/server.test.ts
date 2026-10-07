@@ -489,6 +489,25 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.equal((await post("due", { ids: "x" })).status, 400);
   });
 
+  test("grammar page: lessons on the saved words", async () => {
+    assert.equal((await fetch(`${base}/grammar/wrong-token`)).status, 404);
+    await db.query(
+      `insert into items (italian, english, source) values ('lo sgabello', 'the stool', 'asked'), ('spegnere', 'to switch off', 'asked')
+       on conflict do nothing`,
+    );
+    const res = await fetch(`${base}/grammar/${TOKEN}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    const index = await res.text();
+    assert.match(index, /aria-current="page">Grammar</);
+    assert.match(index, /Il passato prossimo/);
+    const plurale = await (await fetch(`${base}/grammar/${TOKEN}?l=plurale`)).text();
+    assert.match(plurale, /lo sgabello → gli sgabelli/);
+    const presente = await (await fetch(`${base}/grammar/${TOKEN}?l=presente`)).text();
+    assert.match(presente, /spengo/);
+    assert.match(await (await fetch(`${base}/grammar/${TOKEN}?l=nope`)).text(), /Grammatica/, "an unknown lesson shows the list");
+  });
+
   test("Il Caso: open a case, episodes follow memory, finale only when every clue is secured", async () => {
     await db.query("delete from cases");
     assert.equal((await call("start_session", {})).case, null);

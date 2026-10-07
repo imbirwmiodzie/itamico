@@ -506,6 +506,12 @@ export class Store {
     };
   }
 
+  /** Every word with its note, for the grammar lessons. */
+  async grammarWords() {
+    const { rows } = await this.db.query(`select id::int as id, italian, english, note from items order by lower(italian)`);
+    return rows as { id: number; italian: string; english: string; note: string | null }[];
+  }
+
   /** Save a finished game round; `record` when it beats every earlier one. */
   async saveGameRound(r: { score: number; answered: number; correct: number; streak: number }) {
     return this.tx(async (c) => {
