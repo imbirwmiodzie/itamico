@@ -4,6 +4,7 @@
 import type pg from "pg";
 import type { Db } from "./db.js";
 import { today } from "./db.js";
+import { loadAtlas } from "./atlas.js";
 import { caseForTutor, caseSummary, loadCaseBoard, openCase, saveEpisode } from "./case.js";
 import { capGrade, countFillers, sm2 } from "./grading.js";
 import type { Candidate, Photo } from "./pictures.js";
@@ -75,6 +76,20 @@ export interface ForgettableWord {
   pic_source: string | null;
   pic_author: string | null;
   pic_license: string | null;
+}
+
+export interface PalazzoWord {
+  id: number;
+  italian: string;
+  english: string;
+  note: string | null;
+  context: string | null;
+  ease: number;
+  interval_days: number;
+  repetitions: number;
+  due: boolean;
+  lapses: number;
+  pic: number | null;
 }
 
 export class TutorError extends Error {}
@@ -506,6 +521,33 @@ export class Store {
     };
   }
 
+  /** Every word with its note, for the grammar lessons. */
+  async grammarWords() {
+    const { rows } = await this.db.query(`select id::int as id, italian, english, note from items order by lower(italian)`);
+    return rows as { id: number; italian: string; english: string; note: string | null }[];
+  }
+
+  /**
+   * Words for the Palazzo (/palazzo/<token>), with their learning stage. Past
+   * `limit`, the ones due and hardest are kept; `total` counts them all.
+   */
+  async palazzoItems(limit = 300) {
+    const { rows } = await this.db.query(
+      `select i.id::int as id, i.italian, i.english, i.note, i.context, i.ease, i.interval_days, i.repetitions,
+              (i.due_on <= $1) as due, count(*) over ()::int as total,
+              (select count(*)::int from attempts a where a.item_id = i.id and a.grade < 3) as lapses,
+              floor(extract(epoch from p.fetched_at))::float8 as pic
+         from items i left join pictures p on p.item_id = i.id
+        order by (i.due_on <= $1) desc, i.ease, i.id
+        limit $2`,
+      [this.today(), limit],
+    );
+    return {
+      items: rows.map(({ total: _, ...r }) => r) as PalazzoWord[],
+      total: (rows[0]?.total as number) ?? 0,
+    };
+  }
+
   /** Save a finished game round; `record` when it beats every earlier one. */
   async saveGameRound(r: { score: number; answered: number; correct: number; streak: number }) {
     return this.tx(async (c) => {
@@ -590,6 +632,10 @@ export class Store {
 
   stats() {
     return loadStats(this.db, this.timeZone);
+  }
+
+  atlas() {
+    return loadAtlas(this.db, this.timeZone);
   }
 
   widget(limit?: number) {

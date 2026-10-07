@@ -1,4 +1,4 @@
-// MCP surface: nine tools over Store (six for the drill, three for Il Caso). Every response carries the session clock
+// MCP surface: ten tools over Store (six for the drill, three for Il Caso, one for grammar). Every response carries the session clock
 // (session_id, minutes_left, time_up) so the tutor can stop on time without a
 // clock of its own.
 
@@ -6,10 +6,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { MAX_CLUES, MIN_CLUES, SECURED_DAYS } from "./case.js";
+import { grammarForVoice, LESSON_KEYS, LESSONS } from "./lessons.js";
 import { Store, TutorError, WORD_MODE_MAX_WORDS } from "./store.js";
 
 const INSTRUCTIONS = `Italian voice tutor backend. The user is riding a bicycle or driving and only talks.
-Call start_session first (together with get_due_items). Voice mode may cut off your reply when the user pauses mid-sentence and then carries on: if their new message continues the previous one or ignores your last reply, assume they didn't hear it, answer both messages as one, and say again anything from the cut-off reply that still matters (a correction, the drill prompt); never move on past an unheard prompt, and don't repeat tool calls that already went through. Speak first, save after: in a turn that calls capture_item or record_attempt, say your reply first and put the tool calls at the end of the turn, then end the turn: no more text and no other tool calls (never placeholder calls such as code execution). Call capture_item silently whenever the user asks what an Italian word means or how to say something, falls back to English or Polish, or needs the correct form supplied. Drill due items (get_due_items) before free conversation and grade each answer with record_attempt. A drill prompt never gives the answer away: no Italian lead-in containing it. Never reuse prompt sentences; invent new ones each time. In free conversation, build every question around one of the conversation_words from start_session, so that answering naturally needs that word (don't say the word yourself); use a different word and a different kind of question each turn, and never ask the same question twice. Answers are speech-to-text transcripts that often garble correct Italian: if it could be the right word misheard, it is right; correct only certain mistakes (wrong word, article, ending, preposition), never spelling or pronunciation, and ask for a repeat at most once. Don't keep asking about the ride, route, distance or arrival time; talk about anything else and don't circle back to covered topics. Il Caso is the user's mystery story, told in episodes across rides: if start_session returns case, offer once to continue it; when the user asks for the case or the story, call get_case together with get_due_items and follow its instruction. An episode replaces the plain drill: today's due items are its gaps. Every response includes minutes_left for a timed session; when time_up is true, finish the current item and call end_session.`;
+Call start_session first (together with get_due_items). Voice mode may cut off your reply when the user pauses mid-sentence and then carries on: if their new message continues the previous one or ignores your last reply, assume they didn't hear it, answer both messages as one, and say again anything from the cut-off reply that still matters (a correction, the drill prompt); never move on past an unheard prompt, and don't repeat tool calls that already went through. Speak first, save after: in a turn that calls capture_item or record_attempt, say your reply first and put the tool calls at the end of the turn, then end the turn: no more text and no other tool calls (never placeholder calls such as code execution). Call capture_item silently whenever the user asks what an Italian word means or how to say something, falls back to English or Polish, or needs the correct form supplied. Drill due items (get_due_items) before free conversation and grade each answer with record_attempt. A drill prompt never gives the answer away: no Italian lead-in containing it. Never reuse prompt sentences; invent new ones each time. In free conversation, build every question around one of the conversation_words from start_session, so that answering naturally needs that word (don't say the word yourself); use a different word and a different kind of question each turn, and never ask the same question twice. Answers are speech-to-text transcripts that often garble correct Italian: if it could be the right word misheard, it is right; correct only certain mistakes (wrong word, article, ending, preposition), never spelling or pronunciation, and ask for a repeat at most once. Don't keep asking about the ride, route, distance or arrival time; talk about anything else and don't circle back to covered topics. Il Caso is the user's mystery story, told in episodes across rides: if start_session returns case, offer once to continue it; when the user asks for the case or the story, call get_case together with get_due_items and follow its instruction. An episode replaces the plain drill: today's due items are its gaps. When the user asks to practise a grammar topic (articles, plurals, the subjunctive, pronouns…), call get_grammar with that topic and drill its exercises, built from the user's own words, one at a time; grammar answers are not graded with record_attempt. Every response includes minutes_left for a timed session; when time_up is true, finish the current item and call end_session.`;
 
 const GRADE_TABLE = `SM-2 quality: 5 = correct, fluent, no fillers; 4 = correct with 1-2 fillers or a self-correction; 3 = correct with 3+ fillers; 2 = correct only after a hint; 1 = wrong word or form; 0 = English/Polish fallback or no answer.`;
 
@@ -152,6 +153,20 @@ export function buildServer(store: Store): McpServer {
       },
     },
     (args) => run(() => store.saveEpisode(args)),
+  );
+
+  server.registerTool(
+    "get_grammar",
+    {
+      title: "Get grammar lesson",
+      description: `Grammar practice on the user's own words. Call when the user asks to practise or explain a grammar topic ("facciamo il congiuntivo", "let's practise plurals", "i pronomi", "passato remoto"). Map their words to a topic: ${LESSONS.map((l) => `${l.key} = ${l.it}`).join("; ")}. Without topic: the topics, each with how many of the user's words it can use. With topic: intro and rules (explain the one or two that matter, a sentence each, before the first exercise), then exercises made from the user's words: q is what you say (___ is the gap, (…) gives the person or the word to use), hint is the word's English, answers are all accepted (the first is the usual one), options can be read out for choice exercises, full is the whole correct sentence or phrase to say after the answer, rule is why. Ask one at a time; judge transcripts leniently as in the drills; after each answer say the right form (full if given), and if it was wrong, the rule in a few words. These exercises never change the word schedule: no record_attempt and no capture_item for them. After the round (limit, default 10) offer another round (call again) or another topic.`,
+      inputSchema: {
+        topic: z.enum(LESSON_KEYS).optional().describe("Lesson key; omit to list the topics"),
+        limit: z.number().int().min(1).max(30).optional().describe("Exercises per round, default 10"),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    ({ topic, limit }) => run(async () => grammarForVoice(await store.grammarWords(), topic, limit ?? 10)),
   );
 
   server.registerTool(

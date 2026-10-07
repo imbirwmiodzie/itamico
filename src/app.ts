@@ -1,9 +1,12 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { ambientOptions, ambientWords, atlasView, renderAmbient, renderAtlas } from "./atlas.js";
 import { renderCase } from "./case.js";
 import { renderDrill } from "./drill.js";
 import { renderGame } from "./game.js";
+import { renderGrammar } from "./grammar.js";
+import { renderPalazzo } from "./palazzo.js";
 import { type ItemsView, renderItems } from "./items.js";
 import { PRIVATE_HEADERS } from "./page.js";
 import { PhotoError, Pictures, parseCandidate, photoQuery } from "./pictures.js";
@@ -137,8 +140,10 @@ export function createApp(store: Store, token: string, pictures: Pictures = new 
     }
   });
 
-  // "Drill these today": the words missed in a round, due today with their progress kept.
-  app.post("/game/:token/due", auth, async (req, res) => {
+  app.get("/palazzo/:token", auth, page(async (req) => renderPalazzo(req.params.token as string, await store.palazzoItems())));
+
+  // "Drill these today": words missed in a game or the Palazzo hunt, due today with their progress kept.
+  app.post(["/game/:token/due", "/palazzo/:token/due"], auth, async (req, res) => {
     res.set(PRIVATE_HEADERS);
     try {
       const ids = req.body?.ids;
@@ -149,6 +154,9 @@ export function createApp(store: Store, token: string, pictures: Pictures = new 
       res.status(e instanceof TutorError ? 400 : 500).json({ error: e instanceof TutorError ? e.message : "could not save" });
     }
   });
+
+  // Grammar lessons on your words: ?l=<lesson> opens one, otherwise the list.
+  app.get("/grammar/:token", auth, page(async (req) => renderGrammar(req.params.token as string, await store.grammarWords(), str(req.query.l))));
 
   app.get(
     "/poster/:token",
@@ -224,6 +232,17 @@ export function createApp(store: Store, token: string, pictures: Pictures = new 
       return renderStats(stats, req.params.token as string, board.open);
     }),
   );
+
+  // The word atlas (sky, garden, cloud, mistakes) and its full-screen screensaver.
+  app.get(
+    "/atlas/:token",
+    auth,
+    page(async (req) => renderAtlas(await store.atlas(), req.params.token as string, atlasView(req.query.view), req.query.by === "practice" ? "practice" : "trouble")),
+  );
+  app.get("/ambient/:token", auth, page(async (req) => {
+    const o = ambientOptions(req.query);
+    return renderAmbient(ambientWords((await store.atlas()).words, o.n), req.params.token as string, o);
+  }));
 
   app.get("/case/:token", auth, page(async (req) => renderCase(await store.caseBoard(), req.params.token as string)));
 
