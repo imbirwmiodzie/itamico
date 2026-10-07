@@ -185,6 +185,7 @@ These are things the requirements left open, or places where a small change made
 - **Conversation words.** `start_session` returns up to 8 `conversation_words`: words captured or practised in the last 21 days that are not yet mature (interval under 21 days), picked at random from the 30 most recently captured. The tutor builds each free-conversation question so that answering it needs one of them, a different word and a different kind of question each time. The random pick keeps one session's questions from repeating the last one's.
 - **Dates use the user's time zone.** "Due today" is computed in `TUTOR_TZ` (default `Europe/Warsaw`), not in the server's or the database's zone.
 - **Small responses.** Responses are compact JSON with null fields dropped, because tokens are latency in a voice loop.
+- **Interrupted replies are merged.** On a bike you pause mid-sentence, and voice mode can take the pause as the end of your turn, start replying, then cut the reply off when you carry on. The tutor is told to treat a message that continues the previous one as unheard-reply-plus-one-message: answer both together, say again anything from the cut-off reply that still matters (a correction, the drill prompt), and not move past an unheard prompt. The app's turn detection itself can't be tuned from here; in phase 2 it can (see below).
 - **Errors don't stop the conversation.** Errors come back as MCP tool errors with a short message, never as transport failures, so the conversation carries on.
 
 ## Setup
@@ -276,6 +277,7 @@ The server is unchanged. Point the realtime session at the same endpoint:
   - `{"type": "mcp", "server_label": "italian_tutor", "server_url": "https://<host>/mcp", "headers": {"Authorization": "Bearer <MCP_TOKEN>"}, "require_approval": "never"}`
   - The path-token URL also works.
   - Use `tutor/project-instructions.md` as the session instructions.
+- **Pauses mid-sentence:** to stop the tutor cutting in when you pause, use OpenAI's `"turn_detection": {"type": "semantic_vad", "eagerness": "low"}`, or `server_vad` with a longer `silence_duration_ms` (e.g. 1200). When you interrupt a reply, send `conversation.item.truncate` with the audio played so far, so the model knows how much you heard.
 - **Gemini Live:** the client receives tool calls and forwards them over MCP. Use the SDK's MCP client with the bearer header.
 
 The server also sends a short version of the tutor rules as MCP `instructions` on initialize, for clients that surface them.
