@@ -4,7 +4,7 @@ import { markWord, posterOptions, renderPoster } from "../src/poster.js";
 import type { ForgettableWord } from "../src/store.js";
 
 const w = (i: number, extra: Partial<ForgettableWord> = {}): ForgettableWord => ({
-  id: i, italian: `parola${i}`, english: `word ${i}`, note: null, context: null, ease: 1.8,
+  id: i, italian: `parola${i}`, english: `word ${i}`, note: null, context: null, example: null, ease: 1.8,
   attempts: 4, lapses: 2, last_lapse: "2026-10-01", grades: [1, 4, 0, 5], score: 3, ...extra,
 });
 

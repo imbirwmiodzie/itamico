@@ -15,8 +15,8 @@ export type Mode = "word" | "sentence";
 /** Voice modes, plus "screen" for answers graded on the drill page. */
 export type AttemptMode = Mode | "screen";
 export type Source = "asked" | "fallback" | "error" | "topic_check";
-export type ListFilter = "due" | "recent" | "all";
-export type ItemFilter = "all" | "due" | "nocontext" | "failed";
+export type ListFilter = "due" | "recent" | "all" | "noexample";
+export type ItemFilter = "all" | "due" | "nocontext" | "noexample" | "failed";
 export const SOURCES: Source[] = ["asked", "fallback", "error", "topic_check"];
 
 // Full-text search: one 'simple' (language-agnostic) document per item, over
@@ -24,7 +24,7 @@ export const SOURCES: Source[] = ["asked", "fallback", "error", "topic_check"];
 // finds "perché". The same expression backs the GIN index in schema.sql.
 const FOLD_FROM = "àáâäèéêëìíîïòóôöùúûü";
 const FOLD_TO = "aaaaeeeeiiiioooouuuu";
-const ITEM_TEXT_SQL = `translate(lower(italian || ' ' || english || ' ' || coalesce(note, '') || ' ' || coalesce(context, '')), '${FOLD_FROM}', '${FOLD_TO}')`;
+const ITEM_TEXT_SQL = `translate(lower(italian || ' ' || english || ' ' || coalesce(note, '') || ' ' || coalesce(context, '') || ' ' || coalesce(example, '')), '${FOLD_FROM}', '${FOLD_TO}')`;
 const ITEM_DOC_SQL = `to_tsvector('simple', ${ITEM_TEXT_SQL})`;
 
 export function foldText(s: string): string {
@@ -43,6 +43,9 @@ export const WORD_MODE_MAX_WORDS = 4;
 
 /** How many recently learned words start_session hands the tutor for free conversation. */
 export const CONVERSATION_WORDS = 8;
+
+/** Words without an example sentence handed to the tutor at the end of a session. */
+export const EXAMPLES_PER_SESSION = 8;
 
 /** An open session older than this is treated as abandoned (the app was just closed). */
 const STALE_SESSION = "12 hours";
@@ -65,6 +68,7 @@ export interface ForgettableWord {
   english: string;
   note: string | null;
   context: string | null;
+  example: string | null;
   ease: number;
   attempts: number;
   lapses: number;
@@ -84,6 +88,7 @@ export interface PalazzoWord {
   english: string;
   note: string | null;
   context: string | null;
+  example: string | null;
   ease: number;
   interval_days: number;
   repetitions: number;
@@ -211,6 +216,13 @@ export class Store {
         [sessionId],
       );
       const remaining = await c.query(`select count(*)::int as n from items where due_on <= $1`, [day]);
+      // Words still without an example sentence, newest first, for the tutor to
+      // write after the goodbye: a few per ride until every word has one.
+      const noExample = await c.query(
+        `select id::int as id, italian, english, note from items where example is null
+          order by last_captured_at desc, id desc limit $1`,
+        [EXAMPLES_PER_SESSION],
+      );
 
       const reviewedRows = reviewed.rows.map((r) => compact({ ...r, passed: r.last_grade >= 3 }));
       return {
@@ -224,6 +236,7 @@ export class Store {
           passed: reviewedRows.filter((r) => r.passed).length,
           still_due: remaining.rows[0].n as number,
         },
+        ...(noExample.rows.length ? { examples_needed: noExample.rows.map(compact) } : {}),
       };
     });
   }
@@ -233,27 +246,29 @@ export class Store {
   /**
    * Store a gap. An existing item (same Italian, ignoring case) is not
    * duplicated: it is reset to due today with its learning progress cleared.
-   * The original context sentence is kept, since that is what makes it stick.
+   * The original context sentence is kept, since that is what makes it stick,
+   * and so is an example sentence already written (a new one fills a gap).
    */
-  async captureItem(input: { italian: string; english: string; note?: string; context?: string; source: Source }) {
+  async captureItem(input: { italian: string; english: string; note?: string; context?: string; example?: string; source: Source }) {
     const italian = normalizeItalian(input.italian);
     const english = input.english.trim();
     if (!italian) throw new TutorError("italian must not be empty");
     if (!english) throw new TutorError("english must not be empty");
 
     const { rows } = await this.db.query(
-      `insert into items (italian, english, note, context, source, due_on)
-       values ($1, $2, $3, $4, $5, $6)
+      `insert into items (italian, english, note, context, example, source, due_on)
+       values ($1, $2, $3, $4, $5, $6, $7)
        on conflict ((lower(italian))) do update set
          english = excluded.english,
          note = coalesce(excluded.note, items.note),
          context = coalesce(items.context, excluded.context),
+         example = coalesce(items.example, excluded.example),
          interval_days = 0,
          repetitions = 0,
          due_on = excluded.due_on,
          last_captured_at = now()
-       returning id::int as id, italian, english, note, context, source, due_on, (xmax = 0) as inserted`,
-      [italian, english, blankToNull(input.note), blankToNull(input.context), input.source, this.today()],
+       returning id::int as id, italian, english, note, context, example, source, due_on, (xmax = 0) as inserted`,
+      [italian, english, blankToNull(input.note), blankToNull(input.context), blankToNull(input.example), input.source, this.today()],
     );
     const { inserted, ...item } = rows[0];
     return { item: compact(item), status: inserted ? "captured" : "recaptured" };
@@ -305,7 +320,7 @@ export class Store {
   async drillItems(limit = 200) {
     const day = this.today();
     const { rows } = await this.db.query(
-      `select i.id::int as id, i.italian, i.english, i.note, i.context, i.ease, i.interval_days, i.repetitions,
+      `select i.id::int as id, i.italian, i.english, i.note, i.context, i.example, i.ease, i.interval_days, i.repetitions,
               ($1::date - i.due_on) as overdue, count(*) over ()::int as total, ${PIC_SQL}
          from items i left join pictures p on p.item_id = i.id
         where i.due_on <= $1
@@ -324,6 +339,7 @@ export class Store {
       english: r.english as string,
       note: r.note as string | null,
       context: r.context as string | null,
+      example: r.example as string | null,
       new: r.repetitions === 0,
       overdue: r.overdue as number,
       preview: [0, 1, 2, 3, 4, 5].map((q) => sm2(r, q).interval_days),
@@ -415,11 +431,15 @@ export class Store {
 
   async listItems(filter: ListFilter = "due", limit = 50) {
     const day = this.today();
-    const where = filter === "due" ? `where due_on <= $1` : filter === "recent" ? `where created_at > now() - interval '14 days'` : ``;
-    const order = filter === "due" ? `due_on, ease, id` : filter === "recent" ? `created_at desc` : `lower(italian)`;
+    const where =
+      filter === "due" ? `where due_on <= $1`
+      : filter === "recent" ? `where created_at > now() - interval '14 days'`
+      : filter === "noexample" ? `where example is null`
+      : ``;
+    const order = filter === "due" ? `due_on, ease, id` : filter === "recent" || filter === "noexample" ? `created_at desc` : `lower(italian)`;
     const params: unknown[] = filter === "due" ? [day, limit] : [limit];
     const { rows } = await this.db.query(
-      `select id::int as id, italian, english, note, context, source,
+      `select id::int as id, italian, english, note, context, example, source,
               round(ease::numeric, 2)::float as ease, interval_days, repetitions, due_on,
               to_char(created_at, 'YYYY-MM-DD') as created
          from items ${where}
@@ -432,7 +452,7 @@ export class Store {
   }
 
   /**
-   * Full-text search over italian, english, note and context (prefix match per
+   * Full-text search over italian, english, note, context and example (prefix match per
    * word, all words required), with a substring fallback for mid-word matches.
    * Without a query, most recently captured first.
    */
@@ -452,10 +472,11 @@ export class Store {
     }
     if (filter === "due") where.push("i.due_on <= $1");
     if (filter === "nocontext") where.push("i.context is null");
+    if (filter === "noexample") where.push("i.example is null");
     if (filter === "failed") where.push("exists (select 1 from attempts a where a.item_id = i.id and a.grade < 3)");
     params.push(limit);
     const { rows } = await this.db.query(
-      `select i.id::int as id, i.italian, i.english, i.note, i.context, i.source,
+      `select i.id::int as id, i.italian, i.english, i.note, i.context, i.example, i.source,
               round(i.ease::numeric, 2)::float as ease, i.interval_days, i.repetitions, i.due_on,
               (i.due_on <= $1) as due,
               to_char(i.created_at at time zone $2, 'YYYY-MM-DD') as created,
@@ -474,15 +495,15 @@ export class Store {
   }
 
   /** Edit an item's text fields; learning progress is untouched. */
-  async updateItem(id: number, f: { italian: string; english: string; note?: string; context?: string; source: string }) {
+  async updateItem(id: number, f: { italian: string; english: string; note?: string; context?: string; example?: string; source: string }) {
     const italian = normalizeItalian(f.italian);
     const english = f.english.trim();
     if (!italian || !english) throw new TutorError("Italian and English must not be empty");
     if (!SOURCES.includes(f.source as Source)) throw new TutorError(`unknown source "${f.source}"`);
     try {
       const { rows } = await this.db.query(
-        `update items set italian = $2, english = $3, note = $4, context = $5, source = $6 where id = $1 returning italian`,
-        [id, italian, english, blankToNull(f.note), blankToNull(f.context), f.source],
+        `update items set italian = $2, english = $3, note = $4, context = $5, example = $6, source = $7 where id = $1 returning italian`,
+        [id, italian, english, blankToNull(f.note), blankToNull(f.context), blankToNull(f.example), f.source],
       );
       if (!rows[0]) throw new TutorError(`item ${id} not found`);
       return rows[0].italian as string;
@@ -533,7 +554,7 @@ export class Store {
    */
   async palazzoItems(limit = 300) {
     const { rows } = await this.db.query(
-      `select i.id::int as id, i.italian, i.english, i.note, i.context, i.ease, i.interval_days, i.repetitions,
+      `select i.id::int as id, i.italian, i.english, i.note, i.context, i.example, i.ease, i.interval_days, i.repetitions,
               (i.due_on <= $1) as due, count(*) over ()::int as total,
               (select count(*)::int from attempts a where a.item_id = i.id and a.grade < 3) as lapses,
               floor(extract(epoch from p.fetched_at))::float8 as pic
@@ -568,6 +589,25 @@ export class Store {
     return rowCount ?? 0;
   }
 
+  /**
+   * Store example sentences the tutor wrote: one correct, everyday sentence per
+   * word, kept apart from the context sentence the user said. Replaces any
+   * example the word already had.
+   */
+  async addExamples(examples: { item_id: number; example: string }[]) {
+    const saved: { id: number; italian: string }[] = [];
+    const missing: number[] = [];
+    for (const { item_id, example } of examples) {
+      const text = blankToNull(example);
+      if (!text) throw new TutorError(`example for item ${item_id} must not be empty`);
+      const { rows } = await this.db.query(`update items set example = $2 where id = $1 returning id::int as id, italian`, [item_id, text]);
+      if (rows[0]) saved.push(rows[0]);
+      else missing.push(item_id);
+    }
+    const left = await this.db.query(`select count(*)::int as n from items where example is null`);
+    return { saved, ...(missing.length ? { not_found: missing } : {}), still_without_example: left.rows[0].n as number };
+  }
+
   /** Delete an item and its answer history. */
   async deleteItem(id: number) {
     const { rows } = await this.db.query(`delete from items where id = $1 returning italian`, [id]);
@@ -583,7 +623,7 @@ export class Store {
    */
   async forgettable(limit = 16) {
     const { rows } = await this.db.query(
-      `select i.id::int as id, i.italian, i.english, i.note, i.context, round(i.ease::numeric, 2)::float as ease,
+      `select i.id::int as id, i.italian, i.english, i.note, i.context, i.example, round(i.ease::numeric, 2)::float as ease,
               count(a.id)::int as attempts,
               count(a.id) filter (where a.grade < 3)::int as lapses,
               to_char(max(a.at) filter (where a.grade < 3) at time zone $2, 'YYYY-MM-DD') as last_lapse,

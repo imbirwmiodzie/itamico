@@ -13,6 +13,7 @@ export interface WidgetWord {
   english: string;
   note: string | null;
   context: string | null;
+  example: string | null;
   due: boolean;
   attempts: number;
   fails: number;
@@ -36,7 +37,7 @@ export async function loadWidget(db: Db, timeZone: string, limit = 12): Promise<
   const day = today(timeZone);
   const [words, due, active] = await Promise.all([
     db.query(
-      `select i.id::int as id, i.italian, i.english, i.note, i.context,
+      `select i.id::int as id, i.italian, i.english, i.note, i.context, i.example,
               (i.due_on <= $1) as due,
               count(a.id)::int as attempts,
               count(a.id) filter (where a.grade < 3)::int as fails,
@@ -170,7 +171,7 @@ body{overflow:hidden;-webkit-user-select:none;user-select:none;cursor:default}
       '<div class="it' + (front.length > 22 ? " long" : "") + '">' + esc(front) + "</div>" +
       '<div class="hint" id="hint"></div>' +
       '<div class="after"><div class="en">' + esc(back) + (w.note ? ' <span class="said">· ' + esc(w.note) + "</span>" : "") + "</div>" +
-      (w.context ? '<div class="ctx">“' + esc(w.context) + "”</div>" : "") + said + "</div>";
+      (w.example ? '<div class="ctx">' + esc(w.example) + "</div>" : w.context ? '<div class="ctx">“' + esc(w.context) + "”</div>" : "") + said + "</div>";
     $("w").classList.remove("shown");
     clearTimeout(revealTimer);
     const left = EVERY - (Date.now() % EVERY);

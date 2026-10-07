@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { renderDrill } from "../src/drill.js";
 
-const item = { id: 1, italian: "il tragitto", english: "</script><script>alert(1)</script>", note: null, context: null, new: true, overdue: 2, preview: [1, 1, 1, 1, 1, 1] };
+const item = { id: 1, italian: "il tragitto", english: "</script><script>alert(1)</script>", note: null, context: null, example: null, new: true, overdue: 2, preview: [1, 1, 1, 1, 1, 1] };
 
 test("drill page embeds items so they can't break out of the script", () => {
   const html = renderDrill("tok/en", { today: "2026-10-06", items: [item], due: 1, next: null });

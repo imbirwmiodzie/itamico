@@ -13,7 +13,8 @@ create table if not exists items (
   italian          text not null,             -- word, phrase or corrected form
   english          text not null,
   note             text,                      -- e.g. "masculine", "plural agreement"
-  context          text,                      -- sentence where the gap first occurred
+  context          text,                      -- sentence where the gap first occurred, as the user said it
+  example          text,                      -- a correct everyday sentence using the word, written by the tutor
   source           text not null check (source in ('asked', 'fallback', 'error', 'topic_check')),
   ease             real not null default 2.5,
   interval_days    int  not null default 0,
@@ -22,6 +23,9 @@ create table if not exists items (
   created_at       timestamptz not null default now(),
   last_captured_at timestamptz not null default now()  -- bumped on re-capture; drives the session summary
 );
+
+-- Databases created before example sentences.
+alter table items add column if not exists example text;
 
 -- Uniqueness is case-insensitive so "Lo schermo" and "lo schermo" are one item.
 create unique index if not exists items_italian_lower_key on items (lower(italian));
@@ -109,7 +113,8 @@ create table if not exists case_episodes (
 );
 
 -- Full-text search for the Words page; must match ITEM_DOC_SQL in src/store.ts.
-create index if not exists items_fts_idx on items using gin (
-  to_tsvector('simple', translate(lower(italian || ' ' || english || ' ' || coalesce(note, '') || ' ' || coalesce(context, '')),
+drop index if exists items_fts_idx;
+create index if not exists items_fts2_idx on items using gin (
+  to_tsvector('simple', translate(lower(italian || ' ' || english || ' ' || coalesce(note, '') || ' ' || coalesce(context, '') || ' ' || coalesce(example, '')),
     'àáâäèéêëìíîïòóôöùúûü', 'aaaaeeeeiiiioooouuuu'))
 );

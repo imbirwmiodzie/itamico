@@ -101,7 +101,7 @@ export function createApp(store: Store, token: string, pictures: Pictures = new 
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   const form = express.urlencoded({ extended: false, limit: "100kb" });
   const filterOf = (v: unknown): ItemFilter =>
-    (["all", "due", "nocontext", "failed"] as const).find((f) => f === v) ?? "all";
+    (["all", "due", "nocontext", "noexample", "failed"] as const).find((f) => f === v) ?? "all";
 
   app.get("/drill/:token", auth, page(async (req) => renderDrill(req.params.token as string, await store.drillItems())));
 
@@ -298,6 +298,7 @@ export function createApp(store: Store, token: string, pictures: Pictures = new 
     english: str(b.english),
     note: str(b.note),
     context: str(b.context),
+    example: str(b.example),
     source: str(b.source),
   });
 

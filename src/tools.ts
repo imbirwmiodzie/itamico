@@ -1,4 +1,4 @@
-// MCP surface: ten tools over Store (six for the drill, three for Il Caso, one for grammar). Every response carries the session clock
+// MCP surface: eleven tools over Store (seven for the drill, three for Il Caso, one for grammar). Every response carries the session clock
 // (session_id, minutes_left, time_up) so the tutor can stop on time without a
 // clock of its own.
 
@@ -10,7 +10,10 @@ import { grammarForVoice, LESSON_KEYS, LESSONS } from "./lessons.js";
 import { Store, TutorError, WORD_MODE_MAX_WORDS } from "./store.js";
 
 const INSTRUCTIONS = `Italian voice tutor backend. The user is riding a bicycle or driving and only talks.
-Call start_session first (together with get_due_items). Voice mode may cut off your reply when the user pauses mid-sentence and then carries on: if their new message continues the previous one or ignores your last reply, assume they didn't hear it, answer both messages as one, and say again anything from the cut-off reply that still matters (a correction, the drill prompt); never move on past an unheard prompt, and don't repeat tool calls that already went through. Speak first, save after: in a turn that calls capture_item or record_attempt, say your reply first and put the tool calls at the end of the turn, then end the turn: no more text and no other tool calls (never placeholder calls such as code execution). Call capture_item silently whenever the user asks what an Italian word means or how to say something, falls back to English or Polish, or needs the correct form supplied. Drill due items (get_due_items) before free conversation and grade each answer with record_attempt. A drill prompt never gives the answer away: no Italian lead-in containing it. Never reuse prompt sentences; invent new ones each time. In free conversation, build every question around one of the conversation_words from start_session, so that answering naturally needs that word (don't say the word yourself); use a different word and a different kind of question each turn, and never ask the same question twice. Answers are speech-to-text transcripts that often garble correct Italian: if it could be the right word misheard, it is right; correct only certain mistakes (wrong word, article, ending, preposition), never spelling or pronunciation, and ask for a repeat at most once. Don't keep asking about the ride, route, distance or arrival time; talk about anything else and don't circle back to covered topics. Il Caso is the user's mystery story, told in episodes across rides: if start_session returns case, offer once to continue it; when the user asks for the case or the story, call get_case together with get_due_items and follow its instruction. An episode replaces the plain drill: today's due items are its gaps. When the user asks to practise a grammar topic (articles, plurals, the subjunctive, pronouns…), call get_grammar with that topic and drill its exercises, built from the user's own words, one at a time; grammar answers are not graded with record_attempt. Every response includes minutes_left for a timed session; when time_up is true, finish the current item and call end_session.`;
+Call start_session first (together with get_due_items). Voice mode may cut off your reply when the user pauses mid-sentence and then carries on: if their new message continues the previous one or ignores your last reply, assume they didn't hear it, answer both messages as one, and say again anything from the cut-off reply that still matters (a correction, the drill prompt); never move on past an unheard prompt, and don't repeat tool calls that already went through. Speak first, save after: in a turn that calls capture_item or record_attempt, say your reply first and put the tool calls at the end of the turn, then end the turn: no more text and no other tool calls (never placeholder calls such as code execution). Call capture_item silently whenever the user asks what an Italian word means or how to say something, falls back to English or Polish, or needs the correct form supplied; give it an example: a short, correct, everyday Italian sentence of your own using the word. Drill due items (get_due_items) before free conversation and grade each answer with record_attempt. A drill prompt never gives the answer away: no Italian lead-in containing it. Never reuse prompt sentences; invent new ones each time. In free conversation, build every question around one of the conversation_words from start_session, so that answering naturally needs that word (don't say the word yourself); use a different word and a different kind of question each turn, and never ask the same question twice. Answers are speech-to-text transcripts that often garble correct Italian: if it could be the right word misheard, it is right; correct only certain mistakes (wrong word, article, ending, preposition), never spelling or pronunciation, and ask for a repeat at most once. Don't keep asking about the ride, route, distance or arrival time; talk about anything else and don't circle back to covered topics. Il Caso is the user's mystery story, told in episodes across rides: if start_session returns case, offer once to continue it; when the user asks for the case or the story, call get_case together with get_due_items and follow its instruction. An episode replaces the plain drill: today's due items are its gaps. When the user asks to practise a grammar topic (articles, plurals, the subjunctive, pronouns…), call get_grammar with that topic and drill its exercises, built from the user's own words, one at a time; grammar answers are not graded with record_attempt. Every response includes minutes_left for a timed session; when time_up is true, finish the current item and call end_session. If end_session returns examples_needed, say goodbye first, then call add_examples silently with a sentence for each.`;
+
+const EXAMPLE_HINT =
+  "A short, natural, everyday Italian sentence of your own (not the user's words) that uses the word exactly as stored, correct in grammar and meaning, e.g. for 'il tragitto': 'Il tragitto da casa al lavoro dura venti minuti.'";
 
 const GRADE_TABLE = `SM-2 quality: 5 = correct, fluent, no fillers; 4 = correct with 1-2 fillers or a self-correction; 3 = correct with 3+ fillers; 2 = correct only after a hint; 1 = wrong word or form; 0 = English/Polish fallback or no answer.`;
 
@@ -58,12 +61,13 @@ export function buildServer(store: Store): McpServer {
     {
       title: "Capture gap",
       description:
-        "Silently store a gap the user could not produce. Call when (1) the user asks what an Italian word means or how to say something in Italian [source 'asked'], (2) the user falls back to English or Polish mid-sentence [source 'fallback'], (3) you had to supply the correct form of a word, grammar or usage [source 'error'; never for what may be a speech-recognition mishearing], or (4) the user failed to produce a word taught during topic vocabulary [source 'topic_check']. Store the correct Italian form only (a word, short phrase or corrected form like 'mi piacciono' or 'su una pista ciclabile'), never the user's mistake. An existing item is not duplicated; re-capturing it makes it due again today. Do not announce the capture beyond a word or two. Speed: say your reply first and call this at the end of your turn.",
+        "Silently store a gap the user could not produce. Call when (1) the user asks what an Italian word means or how to say something in Italian [source 'asked'], (2) the user falls back to English or Polish mid-sentence [source 'fallback'], (3) you had to supply the correct form of a word, grammar or usage [source 'error'; never for what may be a speech-recognition mishearing], or (4) the user failed to produce a word taught during topic vocabulary [source 'topic_check']. Store the correct Italian form only (a word, short phrase or corrected form like 'mi piacciono' or 'su una pista ciclabile'), never the user's mistake. context is what the user actually said (often garbled by speech recognition); example is your own sentence, always correct Italian. An existing item is not duplicated; re-capturing it makes it due again today. Do not announce the capture beyond a word or two. Speed: say your reply first and call this at the end of your turn.",
       inputSchema: {
         italian: z.string().min(1).max(200).describe("Correct Italian word, phrase or corrected form"),
         english: z.string().min(1).max(200).describe("Short English gloss"),
         note: z.string().max(200).optional().describe("Grammar hint, e.g. 'masculine: lo schermo', 'plural agreement'"),
         context: z.string().max(500).optional().describe("The sentence the gap came up in, as the user said it"),
+        example: z.string().max(300).optional().describe(EXAMPLE_HINT),
         source: z.enum(["asked", "fallback", "error", "topic_check"]),
       },
     },
@@ -107,7 +111,7 @@ export function buildServer(store: Store): McpServer {
     {
       title: "End session",
       description:
-        "Close the session when time is up or the user is done. Returns what was captured and reviewed this session; summarise it in one spoken line.",
+        "Close the session when time is up or the user is done. Returns what was captured and reviewed this session; summarise it in one spoken line. examples_needed lists words that have no example sentence yet: after the goodbye, call add_examples silently with one for each.",
       inputSchema: { session_id: z.number().int() },
     },
     ({ session_id }) => run(() => store.endSession(session_id)),
@@ -170,13 +174,28 @@ export function buildServer(store: Store): McpServer {
   );
 
   server.registerTool(
+    "add_examples",
+    {
+      title: "Add example sentences",
+      description: `Store an example sentence for words, replacing any they had. Call with examples_needed from end_session, or when the user asks you to write or fix example sentences (find the words with list_items filter 'noexample'). Each example: ${EXAMPLE_HINT} Up to 50 per call. Nothing to say about it aloud.`,
+      inputSchema: {
+        examples: z
+          .array(z.object({ item_id: z.number().int(), example: z.string().min(1).max(300) }))
+          .min(1)
+          .max(50),
+      },
+    },
+    ({ examples }) => run(() => store.addExamples(examples)),
+  );
+
+  server.registerTool(
     "list_items",
     {
       title: "List items",
       description:
-        "List stored items for review on screen: 'due' (due today or overdue), 'recent' (captured in the last 14 days), 'all'. Not needed during a spoken drill.",
+        "List stored items for review on screen: 'due' (due today or overdue), 'recent' (captured in the last 14 days), 'noexample' (no example sentence yet, newest first), 'all'. Not needed during a spoken drill.",
       inputSchema: {
-        filter: z.enum(["due", "recent", "all"]).optional().describe("Default 'due'"),
+        filter: z.enum(["due", "recent", "noexample", "all"]).optional().describe("Default 'due'"),
         limit: z.number().int().min(1).max(500).optional().describe("Default 50"),
       },
       annotations: { readOnlyHint: true },

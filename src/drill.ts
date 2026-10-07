@@ -75,6 +75,7 @@ ${nav(token, "drill")}
     <div class="a" id="a" lang="it"></div>
     <div id="cmp" class="cmp" hidden></div>
     <div id="note" class="note" hidden></div>
+    <blockquote id="ex" class="ex" lang="it" hidden></blockquote>
     <blockquote id="ctx" class="ctx" lang="it" hidden></blockquote>
     <div class="grades" role="group" aria-label="Grade your answer">
       <div class="grp"><div class="cap">Forgot</div><div class="row">${gradeButtons(0, 2)}</div></div>
@@ -171,8 +172,10 @@ box-shadow:0 1px 2px rgba(0,0,0,.04),0 18px 40px -18px var(--shadow);min-height:
 .cmp{margin-top:10px;font-size:14px;padding:6px 10px;border-radius:8px;display:inline-block}
 .cmp.match{color:var(--g5);background:rgba(17,128,74,.10)}.cmp.accents{color:var(--g3);background:rgba(192,143,0,.12)}.cmp.wrong{color:var(--g1);background:rgba(208,59,59,.10)}
 .note{margin-top:10px;font-size:14px;color:var(--ink2)}
-.ctx{margin:12px 0 0;padding:8px 12px;border-left:3px solid var(--it-green);background:var(--page);border-radius:0 8px 8px 0;font-style:italic;color:var(--ink2);font-size:15px}
-.ctx mark{background:rgba(0,146,70,.16);color:var(--ink);border-radius:3px;padding:0 2px;font-style:normal}
+.ex{margin:12px 0 0;padding:8px 12px;border-left:3px solid var(--it-green);background:var(--page);border-radius:0 8px 8px 0;color:var(--ink);font-size:15px}
+.ctx{margin:8px 0 0;padding:0 12px;font-style:italic;color:var(--muted);font-size:13px}
+.ctx::before{content:"You said: ";font-style:normal}
+.ex mark,.ctx mark{background:rgba(0,146,70,.16);color:var(--ink);border-radius:3px;padding:0 2px;font-style:normal}
 .grades{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px}
 .cap{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;margin:0 0 6px 2px}
 .row{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
@@ -247,7 +250,7 @@ const CLIENT_JS = String.raw`
     return e;
   }
 
-  // The context sentence with every occurrence of the answer marked.
+  // An example or context sentence with every occurrence of the answer marked.
   function fillContext(box, text, word) {
     box.replaceChildren();
     const hay = text.toLowerCase(), needle = word.toLowerCase();
@@ -297,6 +300,8 @@ const CLIENT_JS = String.raw`
     }
     $("note").hidden = !item.note;
     $("note").textContent = item.note || "";
+    $("ex").hidden = !item.example;
+    if (item.example) fillContext($("ex"), item.example, item.italian);
     $("ctx").hidden = !item.context;
     if (item.context) fillContext($("ctx"), item.context, item.italian);
     $("cmp").hidden = true;

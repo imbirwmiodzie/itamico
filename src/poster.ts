@@ -61,7 +61,7 @@ function wholeMatches(hay: string, needle: string): [number, number][] {
 }
 
 /**
- * The context sentence, escaped, with the word in bold: the whole phrase where
+ * A sentence, escaped, with the word in bold: the whole phrase where
  * it appears as is, else without its article ("la ciotola" in "nella ciotola").
  */
 export function markWord(context: string, word: string): string {
@@ -117,11 +117,13 @@ function credits(words: [number, ForgettableWord][]): string {
 
 function word(w: ForgettableWord, rank: number, cls: string, long = false, history = 12, url?: PicUrl): string {
   const pic = url ? photo(w, url) : "";
+  // The tutor's example is correct Italian; the context is what was said, garbled or not.
+  const sentence = w.example ?? w.context;
   return `<article class="w ${cls}${pic ? " has-pic" : ""}">
   ${pic}<span class="rk">${rank}</span>
   <div class="it${sizeClass(w.italian)}" lang="it">${esc(w.italian)}</div>
   <div class="en">${esc(w.english)}${w.note ? ` <span class="nt">· ${esc(w.note)}</span>` : ""}</div>
-  ${w.context ? `<div class="ctx" lang="it">${markWord(w.context, w.italian)}</div>` : ""}
+  ${sentence ? `<div class="ctx" lang="it">${markWord(sentence, w.italian)}</div>` : ""}
   <div class="ft">${meter(w.grades.slice(-history))}<span>${lapseLine(w, long)}</span></div>
 </article>`;
 }
@@ -258,7 +260,7 @@ ${data.words.length ? `<p class="sub">In the print dialog, keep the scale at 100
   const form = document.querySelector("form.bar");
   form.addEventListener("change", () => form.submit());
   document.getElementById("print").addEventListener("click", () => window.print());
-  // A word whose text doesn't fit its box loses its context sentence, then
+  // A word whose text doesn't fit its box loses its sentence, then
   // its note, then its Italian shrinks, rather than printing a line cut in half.
   // Measured with the history row unpinned from the bottom (.measuring), with
   // 2px to spare: printed sheets are half a millimetre shorter.

@@ -71,7 +71,7 @@ export function renderPalazzo(token: string, d: PalazzoData): string {
     it: w.italian,
     en: w.english,
     note: w.note,
-    ctx: w.context,
+    ctx: w.example ?? w.context,
     st: stage(w),
     iv: w.interval_days,
     due: w.due,

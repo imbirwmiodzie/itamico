@@ -18,11 +18,12 @@ It is a remote MCP server over Streamable HTTP, written in TypeScript, backed by
 | Tool | Input | Returns |
 |---|---|---|
 | `start_session` | `limit_min?` | `session_id`, `due_count`, `due_word_mode`, `minutes_left`, `conversation_words`, `case` (the open mystery, or null) |
-| `capture_item` | `italian`, `english`, `note?`, `context?`, `source` | the item and `captured` or `recaptured` |
+| `capture_item` | `italian`, `english`, `note?`, `context?`, `example?`, `source` | the item and `captured` or `recaptured` |
 | `get_due_items` | `mode`, `limit?` (10) | due items by `due_on`, then lowest ease |
 | `record_attempt` | `item_id`, `session_id?`, `mode`, `prompt?`, `answer`, `grade`, `fillers` | applied `grade`, `interval_days`, `due_on` |
-| `end_session` | `session_id` | items captured and reviewed, plus totals |
-| `list_items` | `filter?` (`due` / `recent` / `all`), `limit?` | items, for review on a screen |
+| `end_session` | `session_id` | items captured and reviewed, plus totals, and `examples_needed`: up to 8 words without an example sentence |
+| `add_examples` | `examples` (`item_id`, `example`; up to 50) | the words saved, and how many still have no example |
+| `list_items` | `filter?` (`due` / `recent` / `noexample` / `all`), `limit?` | items, for review on a screen |
 | `get_case` | none | the open [Il Caso](#il-caso-a-mystery-told-on-your-rides) mystery with clue progress and events, or candidate clues for a new one |
 | `open_case` | `title`, `premise`, `solution`, `clue_ids` (3–6) | the new case |
 | `save_episode` | `case_id`, `headline`, `story_so_far`, `outcome?` (`solved` / `dropped`) | episode number and clue progress |
@@ -31,6 +32,12 @@ It is a remote MCP server over Streamable HTTP, written in TypeScript, backed by
 While a timed session is open, every response also carries `session_id` and `minutes_left`. When the limit passes, the response adds `time_up: true` and a one-line instruction to finish the current item and call `end_session`.
 
 `source` is one of `asked`, `fallback`, `error` or `topic_check`. `mode` is `word` or `sentence`.
+
+### Example sentences
+
+Every word has two sentences. The **context** is what you said when the gap came up, as the speech recognition heard it, so it is often garbled. The **example** is a short, correct, everyday sentence the tutor writes itself, using the word (*Il tragitto da casa al lavoro dura venti minuti.*). The tutor passes it with `capture_item`. Words captured before examples existed get theirs a few at a time: `end_session` returns up to 8 words without one, and the tutor writes them with `add_examples` after saying goodbye. To fill them all at once, ask Claude in a text chat to "write example sentences for my words": it finds them with `list_items` filter `noexample`. You can also edit an example on the Words page.
+
+The drill page shows both: the example, and below it what you said. The poster, widget, atlas, screensaver and Palazzo have room for one sentence, so they show the example, or the context for a word that has none yet.
 
 ### Grading
 
@@ -53,7 +60,7 @@ The model assigns the quality from the transcript. The server applies SM-2:
 
 `https://<host>/drill/<MCP_TOKEN>` is a review on the screen in the style of SuperMemo 98, for when you can look at a phone or a desktop instead of talking. It's linked from the other two pages.
 
-- **One word at a time:** the English prompt is shown; recall the Italian, then **Show answer** (Space or Enter). The answer appears with its note and context sentence, with the word marked in the sentence.
+- **One word at a time:** the English prompt is shown; recall the Italian, then **Show answer** (Space or Enter). The answer appears with its note, its example sentence and what you said when the gap came up (the context), with the word marked in both.
 - **Grade yourself 0–5**, with SuperMemo's labels: Null (blackout), Bad, Fail, Pass, Good, Bright (instant). Keys `0`–`5` work too. Each button shows the interval that grade would give.
 - **Same scheduling:** grades go through the same SM-2 step as the voice drill and are saved as they're given. They're stored with mode `screen`. They don't join an open voice session, and they're left out of the filler averages on the stats page.
 - **Final drill:** words graded below Good (4) come back after the main review, again and again until you grade them Good or Bright. As in SuperMemo, these repeats don't change the schedule and aren't stored.
@@ -208,13 +215,13 @@ It uses the same token as the connector URL. A wrong token returns 404. The page
 
 `https://<host>/items/<MCP_TOKEN>` lets you search and edit the vocabulary. It's linked from the stats page, and the stats page is linked back from it.
 
-- **Search:** full-text search over Italian, English, note and context.
+- **Search:** full-text search over Italian, English, note, example and context.
   - Every word you type must match, and each counts as a prefix (`pell` finds *la pellicola*).
   - Accents are ignored (`perche` finds *perché*).
   - Parts of words also match (`ellicol`).
   - It uses a Postgres GIN index on a `'simple'` text configuration, with no extensions needed.
-- **Filters:** all words, due today, missing context, or ever failed.
-- **Editing:** tap a word to change its Italian, English, note, context or source; its learning progress is kept. **Make due today** restarts its learning. **Delete** removes it together with its answer history.
+- **Filters:** all words, due today, missing context, missing example, or ever failed.
+- **Editing:** tap a word to change its Italian, English, note, example, context or source; its learning progress is kept. **Make due today** restarts its learning. **Delete** removes it together with its answer history.
 - **Answer history:** each word shows its last 10 answers (time, prompt, answer, grade, fillers).
 - **Photo:** search the internet for a photo of the word and tap one to keep it (see [Photos](#photos)). It then shows on the poster, the cards and in the drill.
 - **Add a word:** adds a word by hand. An existing word isn't duplicated; it becomes due today again.
@@ -232,9 +239,9 @@ On macOS, `desktop/macos/itamico.lua` pins the card at a fixed spot on screen wi
 These are things the requirements left open, or places where a small change made the voice loop more robust.
 
 - **Case-insensitive uniqueness.** `items.italian` is unique on `lower(italian)`, so "Lo schermo" and "lo schermo" are one item. Captured text is tidied first: whitespace is collapsed, and wrapping quotes and trailing punctuation are dropped. Apostrophes are kept, so `un po'` survives.
-- **Re-capture.** Capturing an existing item updates its gloss and note, and resets it to due today with repetitions cleared. Its ease is kept. The **original context sentence is kept**, because the first context is the memorable one.
+- **Re-capture.** Capturing an existing item updates its gloss and note, and resets it to due today with repetitions cleared. Its ease is kept. The **original context sentence is kept**, because the first context is the memorable one. An existing example is kept too; a word without one gets the new one.
 - **`items.last_captured_at`.** This column was added to the schema. It is set on every capture or re-capture, and it is how `end_session` knows what was captured during the session.
-- **Due items carry no context.** `get_due_items` returns the prompt (`english`), the answer (`italian`) and the grammar note under `after_answer`, but never the context sentence. The context usually contains the answer, and the tutor kept weaving it into the question. It stays on the stats and Words pages.
+- **Due items carry no context.** `get_due_items` returns the prompt (`english`), the answer (`italian`) and the grammar note under `after_answer`, but never the context or example sentence. Both usually contain the answer, and the tutor kept weaving the context into the question. It stays on the stats and Words pages.
 - **Word mode filters by length.** `get_due_items` in word mode returns only items of 4 words or fewer: something you can say in one breath while riding. Longer corrections wait for sentence mode, and `held_for_sentence_mode` tells the tutor how many are waiting.
 - **The server guards the hesitation rows.**
   - `record_attempt` counts filler tokens (eh, ehm, uh, um, mmm, hmm) in `answer` and uses whichever is larger: its own count or the model's.

@@ -22,6 +22,7 @@ export interface AtlasWord {
   english: string;
   note: string | null;
   context: string | null;
+  example: string | null;
   ease: number;
   interval: number;
   reps: number;
@@ -60,7 +61,7 @@ export async function loadAtlas(db: Db, timeZone: string): Promise<Atlas> {
   const day = today(timeZone);
   const [words, mistakes] = await Promise.all([
     db.query(
-      `select i.id::int as id, i.italian, i.english, i.note, i.context, round(i.ease::numeric, 2)::float as ease,
+      `select i.id::int as id, i.italian, i.english, i.note, i.context, i.example, round(i.ease::numeric, 2)::float as ease,
               i.interval_days as interval, i.repetitions as reps,
               greatest(0, $1::date - i.due_on)::int as overdue, (i.due_on <= $1::date) as due,
               to_char(i.created_at at time zone $2, 'YYYY-MM-DD') as created,
@@ -635,14 +636,17 @@ const scriptJson = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");
 
 export function renderAmbient(words: AtlasWord[], token: string, o: AmbientOptions): string {
   const t = encodeURIComponent(token);
-  const items = words.map((w) => ({
-    it: w.italian,
-    en: w.english,
-    note: w.note,
-    ctx: w.context ? markWord(w.context, w.italian) : null,
-    pic: w.pic === null ? null : `/pic/${t}/${w.id}?v=${w.pic}`,
-    hue: Math.round(hash(w.id) * 360),
-  }));
+  const items = words.map((w) => {
+    const sentence = w.example ?? w.context;
+    return {
+      it: w.italian,
+      en: w.english,
+      note: w.note,
+      ctx: sentence ? markWord(sentence, w.italian) : null,
+      pic: w.pic === null ? null : `/pic/${t}/${w.id}?v=${w.pic}`,
+      hue: Math.round(hash(w.id) * 360),
+    };
+  });
   return `<!doctype html>
 <html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><meta name="robots" content="noindex">

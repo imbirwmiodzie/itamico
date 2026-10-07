@@ -21,6 +21,7 @@ export interface ItemRow {
   english: string;
   note: string | null;
   context: string | null;
+  example: string | null;
   source: string;
   ease: number;
   interval_days: number;
@@ -54,6 +55,7 @@ const FILTERS: [ItemFilter, string][] = [
   ["all", "All words"],
   ["due", "Due today"],
   ["nocontext", "Missing context"],
+  ["noexample", "Missing example"],
   ["failed", "Ever failed"],
 ];
 
@@ -118,6 +120,7 @@ function itemCard(i: ItemRow, v: ItemsView, base: string): string {
 <summary>
   ${i.pic !== null ? `<img class="thumb" src="/pic/${encodeURIComponent(v.token)}/${i.id}?v=${i.pic}" alt="" loading="lazy">` : ""}<span class="it">${esc(i.italian)}</span> <span class="en">${esc(i.english)}</span>
   <span class="meta">${i.due ? `<span class="due">due</span> · ` : `next ${esc(i.due_on)} · `}${stage(i)} · ${i.attempts} ${i.attempts === 1 ? "answer" : "answers"}</span>
+  ${i.example ? `<span class="ex" lang="it">${esc(i.example)}</span>` : ""}
   ${i.context ? `<span class="ctx">“${esc(i.context)}”</span>` : ""}
 </summary>
 <form method="post" action="${base}/${i.id}" class="edit">
@@ -126,7 +129,8 @@ function itemCard(i: ItemRow, v: ItemsView, base: string): string {
   <label>English<input name="english" value="${esc(i.english)}" required maxlength="200"></label>
   <label>Note<input name="note" value="${esc(i.note)}" maxlength="200" placeholder="e.g. masculine"></label>
   <label>Source${sourceSelect(i.source)}</label>
-  <label class="wide">Context<textarea name="context" rows="2" maxlength="500" placeholder="The sentence it came up in">${esc(i.context)}</textarea></label>
+  <label class="wide">Example<textarea name="example" rows="2" maxlength="300" placeholder="A correct everyday sentence using the word">${esc(i.example)}</textarea></label>
+  <label class="wide">Context<textarea name="context" rows="2" maxlength="500" placeholder="The sentence it came up in, as you said it">${esc(i.context)}</textarea></label>
   <div class="buttons">
     <button name="action" value="save" class="primary">Save</button>
     <button name="action" value="reset" formnovalidate title="Due today, learning starts over">Make due today</button>
@@ -169,6 +173,7 @@ button.danger{color:var(--bad);border-color:var(--bad)}
 .item summary::-webkit-details-marker{display:none}
 .it{font-weight:600;font-size:16px}.en{color:var(--ink2)}
 .meta{font-size:12px;color:var(--muted);margin-left:auto}.due{color:var(--s1);font-weight:600}
+.ex{flex-basis:100%;font-size:13px;color:var(--ink)}
 .ctx{flex-basis:100%;font-size:13px;color:var(--ink2);font-style:italic}
 form.edit{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
 form.edit label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--ink2)}
@@ -192,7 +197,7 @@ h3{font-size:13px;margin:14px 0 0;color:var(--ink2);font-weight:500}
 ${nav(v.token, "items")}
 <h1>Words</h1>
 <form class="search" method="get" action="${base}" role="search">
-  <input type="search" name="q" value="${esc(v.q)}" placeholder="Search Italian, English, notes, context…" aria-label="Search" autofocus>
+  <input type="search" name="q" value="${esc(v.q)}" placeholder="Search Italian, English, notes, examples, context…" aria-label="Search" autofocus>
   <select name="filter" aria-label="Filter">${FILTERS.map(([k, label]) => `<option value="${k}"${k === v.filter ? " selected" : ""}>${label}</option>`).join("")}</select>
   <button class="primary">Search</button>
 </form>
@@ -207,7 +212,8 @@ ${v.err ? `<div class="banner err" role="alert">${esc(v.err)}</div>` : ""}
   <label>English<input name="english" required maxlength="200"></label>
   <label>Note<input name="note" maxlength="200"></label>
   <label>Source${sourceSelect("asked")}</label>
-  <label class="wide">Context<textarea name="context" rows="2" maxlength="500"></textarea></label>
+  <label class="wide">Example<textarea name="example" rows="2" maxlength="300" placeholder="A correct everyday sentence using the word"></textarea></label>
+  <label class="wide">Context<textarea name="context" rows="2" maxlength="500" placeholder="The sentence it came up in, as you said it"></textarea></label>
   <div class="buttons"><button class="primary">Add</button></div>
   <p class="sub">An existing word (same Italian) is not duplicated: it becomes due today again.</p>
 </form></details>

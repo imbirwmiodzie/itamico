@@ -4,7 +4,7 @@ import { GALLERY_MAX, renderPalazzo, shelfKey, stage } from "../src/palazzo.js";
 import type { PalazzoWord } from "../src/store.js";
 
 const word = (id: number, italian: string, extra: Partial<PalazzoWord> = {}): PalazzoWord => ({
-  id, italian, english: `meaning ${id}`, note: null, context: null, ease: 2.5, interval_days: 0, repetitions: 0, due: false, lapses: 0, pic: null, ...extra,
+  id, italian, english: `meaning ${id}`, note: null, context: null, example: null, ease: 2.5, interval_days: 0, repetitions: 0, due: false, lapses: 0, pic: null, ...extra,
 });
 const dataOf = (html: string) => JSON.parse(html.match(/<script type="application\/json" id="data">(.*?)<\/script>/s)![1]);
 

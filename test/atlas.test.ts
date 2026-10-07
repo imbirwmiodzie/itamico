@@ -6,7 +6,7 @@ import {
 } from "../src/atlas.js";
 
 const w = (id: number, extra: Partial<AtlasWord> = {}): AtlasWord => ({
-  id, italian: `parola${id}`, english: `word ${id}`, note: null, context: null, ease: 2.5, interval: 0, reps: 0,
+  id, italian: `parola${id}`, english: `word ${id}`, note: null, context: null, example: null, ease: 2.5, interval: 0, reps: 0,
   overdue: 0, due: true, created: "2026-09-01", attempts: 0, lapses: 0, pic: null, ...extra,
 });
 const atlas = (words: AtlasWord[], mistakes: Atlas["mistakes"] = []): Atlas => ({ today: "2026-10-06", words, mistakes });

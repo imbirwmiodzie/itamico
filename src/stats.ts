@@ -16,7 +16,7 @@ export interface Stats {
   daily: { day: string; passed: number; failed: number; fillers: number | null }[];
   forecast: { day: string; count: number }[];
   hardest: { italian: string; english: string; ease: number; attempts: number; fails: number; last: string }[];
-  recent: { italian: string; english: string; note: string | null; context: string | null; source: string; captured: string }[];
+  recent: { italian: string; english: string; note: string | null; example: string | null; context: string | null; source: string; captured: string }[];
   sources: Record<string, number>;
   /** One entry per day from a Monday CAL_WEEKS weeks back through today. */
   calendar: { day: string; answers: number; passed: number }[];
@@ -111,7 +111,7 @@ export async function loadStats(db: Db, timeZone: string): Promise<Stats> {
       [timeZone],
     ),
     db.query(
-      `select italian, english, note, context, source, to_char(${local("last_captured_at", 1)}, 'YYYY-MM-DD') as captured
+      `select italian, english, note, example, context, source, to_char(${local("last_captured_at", 1)}, 'YYYY-MM-DD') as captured
          from items order by last_captured_at desc, id desc limit 15`,
       [timeZone],
     ),
@@ -619,7 +619,7 @@ ${s.hardest.length ? `<div class="scroll">${table(["Italian", "English", "Fails"
 </section>
 
 <section class="card"><h2>Recently captured</h2><p class="sub">${Object.entries(s.sources).map(([k, v]) => `${esc(k)} ${v}`).join(" · ") || "Nothing yet."}</p>
-${s.recent.length ? `<div class="scroll">${table(["Italian", "English", "Note", "Context", "Source", "Captured"], s.recent.map((r) => [r.italian, r.english, r.note ?? "", r.context ?? "", r.source, r.captured]), "words", [2, 4, 5])}</div>` : ""}
+${s.recent.length ? `<div class="scroll">${table(["Italian", "English", "Note", "Example", "Context", "Source", "Captured"], s.recent.map((r) => [r.italian, r.english, r.note ?? "", r.example ?? "", r.context ?? "", r.source, r.captured]), "words", [2, 5, 6])}</div>` : ""}
 </section>
 </main>
 ${TIP_HTML}

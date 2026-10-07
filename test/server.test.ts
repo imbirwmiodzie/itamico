@@ -81,9 +81,10 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.equal((await fetch(`${base}/health`)).status, 200);
   });
 
-  test("lists the ten tools", async () => {
+  test("lists the eleven tools", async () => {
     const { tools } = await client.listTools();
     assert.deepEqual(tools.map((t) => t.name).sort(), [
+      "add_examples",
       "capture_item",
       "end_session",
       "get_case",
@@ -109,9 +110,11 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
       italian: "tragitto",
       english: "commute, journey",
       context: "what does tragitto mean",
+      example: "Il tragitto da casa al lavoro dura venti minuti.",
       source: "asked",
     });
     assert.equal(a.status, "captured");
+    assert.equal(a.item.example, "Il tragitto da casa al lavoro dura venti minuti.");
     assert.equal(a.item.due_on, today(TZ));
     assert.equal(a.minutes_left, 10);
     await call("capture_item", { italian: "lo schermo", english: "the screen", note: "masculine", source: "error" });
@@ -122,16 +125,22 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
       source: "error",
     });
 
-    // Re-capture does not duplicate and keeps the original context.
+    // Re-capture does not duplicate and keeps the original context and example.
     const again = await call("capture_item", {
       italian: "Tragitto.",
       english: "commute",
       context: "a different sentence",
+      example: "Un altro tragitto.",
       source: "fallback",
     });
     assert.equal(again.status, "recaptured");
     assert.equal(again.item.id, a.item.id);
     assert.equal(again.item.context, "what does tragitto mean");
+    assert.equal(again.item.example, "Il tragitto da casa al lavoro dura venti minuti.");
+    // An example fills in on re-capture when the word had none.
+    const screenAgain = await call("capture_item", { italian: "lo schermo", english: "the screen", example: "Lo schermo del telefono è rotto.", source: "error" });
+    assert.equal(screenAgain.item.example, "Lo schermo del telefono è rotto.");
+    await db.query("update items set example = null where id = $1", [screenAgain.item.id]);
 
     // Word mode holds back the long phrase.
     const word = await call("get_due_items", { mode: "word" });
@@ -139,9 +148,10 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.equal(word.held_for_sentence_mode, 1);
     assert.equal(word.due_total, 3);
     assert.equal(word.items[0].new, true);
-    // The context (which contains the answer) is never sent with a due item; the note travels apart.
+    // The context and example (which contain the answer) are never sent with a due item; the note travels apart.
     const tragitto = word.items.find((i: { italian: string }) => i.italian === "tragitto");
     assert.equal(tragitto.context, undefined);
+    assert.equal(tragitto.example, undefined);
     assert.equal(tragitto.after_answer, undefined);
     const screen = word.items.find((i: { italian: string }) => i.italian === "lo schermo");
     assert.deepEqual(screen.after_answer, { note: "masculine" });
@@ -207,6 +217,20 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     const end = await call("end_session", { session_id: sid });
     assert.deepEqual(end.totals, { captured: 3, reviewed: 3, passed: 2, still_due: 0 });
     assert.equal(end.minutes, 11);
+    // Words without an example are handed back for the tutor to write, newest first.
+    assert.deepEqual(end.examples_needed.map((i: { italian: string }) => i.italian), ["lo schermo", "su una pista ciclabile di città"]);
+    assert.equal((await call("list_items", { filter: "noexample" })).returned, 2);
+    const ex = await call("add_examples", {
+      examples: [
+        ...end.examples_needed.map((i: { id: number; italian: string }) => ({ item_id: i.id, example: `Ecco ${i.italian}.` })),
+        { item_id: 999999, example: "Niente." },
+      ],
+    });
+    assert.equal(ex.saved.length, 2);
+    assert.deepEqual(ex.not_found, [999999]);
+    assert.equal(ex.still_without_example, 0);
+    assert.equal((await call("list_items", { filter: "noexample" })).returned, 0);
+    assert.equal((await call("add_examples", { examples: [{ item_id: a.item.id, example: "  " }] }))._isError, true);
     // After the session closes, no clock is reported.
     assert.equal((await call("list_items")).minutes_left, undefined);
   });
@@ -267,7 +291,7 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     await call("capture_item", { italian: "perché", english: "why, because", context: "non so perché", source: "asked" });
     await call("capture_item", { italian: "il portellone", english: "the tailgate", note: "masculine", context: "ho aperto il tailgate", source: "fallback" });
     const store = new Store(db, TZ);
-    const names = async (q: string, filter: "all" | "due" | "nocontext" | "failed" = "all") =>
+    const names = async (q: string, filter: "all" | "due" | "nocontext" | "noexample" | "failed" = "all") =>
       (await store.searchItems(q, filter)).items.map((i: { italian: string }) => i.italian);
 
     assert.deepEqual(await names("perche"), ["perché"], "accents folded");
@@ -278,6 +302,8 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     assert.deepEqual(await names("a:b & | ! ( ) ' 100%"), [], "query syntax and LIKE wildcards are inert");
     assert.ok((await names("")).length >= 5, "empty query lists everything");
     assert.ok(!(await names("", "nocontext")).includes("perché"));
+    assert.ok((await names("", "noexample")).includes("perché"));
+    assert.deepEqual(await names("venti minuti"), ["tragitto"], "example sentence");
     const hit = (await store.searchItems("tragitto")).items[0];
     assert.equal(hit.italian, "tragitto");
     assert.ok(hit.history.length >= 1 && "grade" in hit.history[0], "answer history included");
@@ -294,13 +320,14 @@ describe("MCP server", { skip: !url && "TEST_DATABASE_URL not set" }, () => {
     const post = (path: string, body: Record<string, string>) =>
       fetch(`${base}/items/${path}`, { method: "POST", body: new URLSearchParams(body), redirect: "manual" });
     const loc = (r: Response) => new URL(r.headers.get("location") ?? "", base).searchParams;
-    const form = { q: "perche", filter: "all", italian: "perché", english: "why", note: "also: because", context: "non so perché", source: "asked" };
+    const form = { q: "perche", filter: "all", italian: "perché", english: "why", note: "also: because", context: "non so perché", example: "Perché non vieni?", source: "asked" };
 
     let res = await post(`${TOKEN}/${id}`, { ...form, action: "save" });
     assert.equal(res.status, 303);
     assert.match(res.headers.get("location") ?? "", /msg=Saved.*open=\d+#i\d+/);
-    let row = (await db.query("select english, note from items where id = $1", [id])).rows[0];
-    assert.deepEqual(row, { english: "why", note: "also: because" });
+    let row = (await db.query("select english, note, example from items where id = $1", [id])).rows[0];
+    assert.deepEqual(row, { english: "why", note: "also: because", example: "Perché non vieni?" });
+    assert.match(await (await fetch(`${base}/items/${TOKEN}?q=perche`)).text(), /Perché non vieni\?/);
 
     res = await post(`${TOKEN}/${id}`, { ...form, italian: "Lo Schermo", action: "save" });
     assert.match(loc(res).get("err") ?? "", /"Lo Schermo" already exists/, "duplicate italian refused");
